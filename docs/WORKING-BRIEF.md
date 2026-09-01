@@ -21,7 +21,8 @@ anything here. This file adds fork-specific rules on top.
 commits and actively maintained. Every upstream line we touch is a line that can
 conflict, forever.
 
-Current cost: **2 files, 3 insertions, 1 deletion.** Keep it there.
+Current cost: **2 files, 3 insertions, 1 deletion** of code, plus a
+rewritten `README.md`. Keep it there.
 
 Before editing any upstream file, ask whether a DOM attribute hook plus code in
 our own directory would do instead. It usually will — that question saved the

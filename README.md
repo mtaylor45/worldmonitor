@@ -236,6 +236,17 @@ The correct palette is ultimately a hardware decision. A display that looks exce
 
 Design Principles
 
+The full specification is docs/DESIGN-SYSTEM.md, with preview/lcars-style-guide.html
+as the rendered reference — geometry, colour, type, components, page archetypes and
+motion. Both are self-contained and open straight off the filesystem, with no build
+step and no network, so they work on the kiosk itself.
+
+Conformance is asserted rather than left to review. e2e/theme-engine-p0.spec.ts checks
+the field lift, the elbow's 2.40 : 1 ratio and the presence of its field-coloured
+carve, the type scale and its 13px floor, the rail's bottom-left code and bottom-right
+label, square status tags, the absence of transitions inside the frame, and that
+salmon and red appear nowhere in the chrome at rest.
+
 The LCARS implementation follows several rules.
 
 1. Instrumentation, not decoration
@@ -327,6 +338,10 @@ worldmonitor/
 ├── deploy/
 │   └── kiosk/
 │       └── Kiosk deployment configuration
+│
+├── preview/
+│   ├── lcars-style-guide.html
+│   └── lcars-preview.html
 │
 ├── e2e/
 │   └── Theme and acceptance tests
@@ -609,7 +624,9 @@ The repository contains deeper documentation for specific areas of the system.
 
 Document	Purpose
 SCOPE.md	Authoritative roadmap, architecture, constraints, and acceptance criteria
-docs/DESIGN-SYSTEM.md	LCARS visual and implementation specification
+docs/DESIGN-SYSTEM.md	LCARS visual and implementation specification — the rules as a checklist
+preview/lcars-style-guide.html	The design system rendered: elbow anatomy with measured ticks, both palettes, the type scale, a component gallery, and live motion demos. Open it when a decision needs to be seen rather than read.
+preview/lcars-preview.html	The frame at exactly 1280×720 with a palette toggle and the signal ramp alongside. Open it on the kiosk, from 2.5 m, to settle the palette.
 docs/LCARS-ASSETS.md	Asset research, licensing, and integration guidance
 docs/P0-PORT.md	P0 theme-engine implementation and verification
 docs/UPSTREAM-DIFF.md	Fork-specific changes to upstream files

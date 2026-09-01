@@ -16,10 +16,35 @@ register exists to keep the surface small enough to audit before every merge.
 |---|---|---|---|
 | `src/main.ts` | +2, -0 | `import { bootThemes }` and one call before `new App('app')` | P0 |
 | `index.html` | +1, -1 | `data-wm-shell` attribute added to `<div id="app">` | P0 |
+| `README.md` | rewritten | Describes this fork rather than upstream | — |
 
-**Total: 2 files, 3 insertions, 1 deletion.** No file is reformatted,
+**Code surface: 2 files, 3 insertions, 1 deletion.** No file is reformatted,
 reorganized, or otherwise cleaned up (§4.3) — a whitespace-only change to a
 file upstream also touches converts a clean merge into a manual one.
+
+### `README.md`
+
+Rewritten to describe this fork. Upstream's README describes a hosted product
+with npm/PyPI packages, an MCP server, six live variants and commercial
+licensing — none of which this fork provides, so a reader landing here was
+being told about a different project.
+
+**This is deliberately the one upstream file we do not try to keep mergeable**,
+and it is the cheapest possible kind of conflict: when upstream edits its
+README, take ours.
+
+```bash
+git checkout --ours README.md
+```
+
+Nothing in our README needs upstream's content, so there is never a merge to
+reason about — only a choice, and it is always the same choice. Contrast
+`src/main.ts`, where a conflict genuinely has to be read.
+
+`README.zh-CN.md` and `README.ja-JP.md` are **left untouched**. They are
+upstream's translations of upstream's README, they cost nothing to carry, and
+translating a personal fork's README into two languages would be work with no
+reader.
 
 ### `src/main.ts`
 

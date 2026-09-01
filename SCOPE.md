@@ -457,7 +457,7 @@ question and outside this scope.
 
 | Risk | Impact | Mitigation | State |
 |---|---|---|---|
-| Upstream merge divergence | High | §4 fork discipline; `UPSTREAM-DIFF.md` | 2 files, 3 insertions, 1 deletion |
+| Upstream merge divergence | High | §4 fork discipline; `UPSTREAM-DIFF.md` | 2 files, 3 insertions, 1 deletion of code (plus `README.md`, resolved with `--ours`) |
 | Audio device lacks real AEC | High | §8 acceptance test before committing | Open |
 | CPU inference too slow | Medium | Measure at P2; GPU in a swarm node, not an eGPU | Open |
 | Muted palette illegible at distance | Medium | Ship both variants; decide on hardware | Both ship |
