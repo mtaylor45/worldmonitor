@@ -19,10 +19,10 @@
  * back the drift check in `tests/dom/theme-token-contract.test.mts`.
  */
 
-import type { ThemeTokens } from './types';
+import type { TokenMap } from './types';
 
 /** Surface, border and text ramp — main.css:8. */
-export const BASE_TOKENS: ThemeTokens = Object.freeze({
+export const BASE_TOKENS: TokenMap = Object.freeze({
   bg: '#0a0a0a',
   'bg-secondary': '#111',
   surface: '#141414',
@@ -72,7 +72,7 @@ export const BASE_TOKENS: ThemeTokens = Object.freeze({
  * palette: salmon is alert-only (SCOPE.md §2), and recolouring `--threat-low`
  * to a warm LCARS orange would make a calm reading look like an alarm.
  */
-export const SIGNAL_TOKENS: ThemeTokens = Object.freeze({
+export const SIGNAL_TOKENS: TokenMap = Object.freeze({
   'semantic-critical': '#ff4444',
   'semantic-high': '#ff8800',
   'semantic-elevated': '#ffaa00',
@@ -110,7 +110,7 @@ export const SIGNAL_TOKENS: ThemeTokens = Object.freeze({
 });
 
 /** Type stack — main.css:8. `--font-body` derives from `--font-body-base`. */
-export const FONT_TOKENS: ThemeTokens = Object.freeze({
+export const FONT_TOKENS: TokenMap = Object.freeze({
   'font-mono':
     "'SF Mono', 'Monaco', 'Cascadia Code', 'Fira Code', 'DejaVu Sans Mono', 'Liberation Mono', monospace",
   'font-body-base': 'var(--font-mono)',
@@ -118,14 +118,14 @@ export const FONT_TOKENS: ThemeTokens = Object.freeze({
 });
 
 /** Dashboard grid metrics — main.css:1580. */
-export const LAYOUT_TOKENS: ThemeTokens = Object.freeze({
+export const LAYOUT_TOKENS: TokenMap = Object.freeze({
   'dashboard-panel-row-min': '200px',
   'dashboard-panel-row-max': '380px',
   'dashboard-grid-gap': '4px',
 });
 
 /** Every token a theme may override, with its upstream baseline value. */
-export const DEFAULT_TOKEN_CONTRACT: ThemeTokens = Object.freeze({
+export const DEFAULT_TOKEN_CONTRACT: TokenMap = Object.freeze({
   ...BASE_TOKENS,
   ...SIGNAL_TOKENS,
   ...FONT_TOKENS,

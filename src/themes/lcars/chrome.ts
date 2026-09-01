@@ -1,98 +1,169 @@
-import { PANEL_ATTRIBUTE } from '../engine';
-import type { ThemeChrome } from '../types';
+import { CONTENT_ATTRIBUTE } from '../engine';
+import type { ChromeContext, ThemeChrome } from '../types';
 
 /**
- * LCARS structural chrome — the left rail and the elbow that frames it.
+ * LCARS frame construction.
  *
- * P0 scope: prove that a theme can add and cleanly remove structure, and that
- * doing so repeatedly is lossless. The rail's buttons are inert placeholders
- * here; P1 binds them to real panel-focus actions and P3 routes them through
- * the shared `wm:action` registry so voice and rail cannot drift apart.
+ * The frame is not decoration — it's the navigation. The left rail carries the
+ * panel switcher, the header carries system state, the footer carries the
+ * voice indicator. Everything the dashboard renders goes inside the content
+ * well bounded by the elbow.
  *
- * Everything this mounts lives inside ONE container element, and `unmount`
- * removes exactly that element plus the marker class it set. That single-root
- * rule is what makes twenty mount/unmount cycles provably leave no residue.
+ * Structure:
+ *
+ *   ┌──────┐╭──────────────────────────────────╮
+ *   │ rail ││  header bar          WORLD MONITOR│
+ *   │  ╭───╯╰──────────────────────────────────╯
+ *   │  │
+ *   │  │     [data-wm-content]
+ *   │  │
+ *   ╰──┴───────────────────────────────────────╯
  */
 
-const ROOT_ID = 'wm-lcars-chrome';
-const SHELL_CLASS = 'wm-lcars-shelled';
+interface RailItem {
+  id: string;
+  label: string;
+  /** Token name from the theme palette. */
+  tone: 'tan' | 'lilac' | 'periwinkle' | 'ice' | 'cream';
+  action: string;
+}
 
-/** Rail entries. `action` strings follow the `namespace.verb` convention. */
-const RAIL_ITEMS: readonly { label: string; action: string }[] = [
-  { label: 'MONITOR', action: 'panel.focus' },
-  { label: 'GLOBE', action: 'map.focus' },
-  { label: 'FEEDS', action: 'panel.feeds' },
-  { label: 'LISTEN', action: 'voice.ptt' },
-  { label: 'THEME', action: 'theme.cycle' },
+const RAIL: RailItem[] = [
+  { id: 'brief', label: 'BRIEF', tone: 'tan', action: 'panel.focus:brief' },
+  { id: 'globe', label: 'GLOBE', tone: 'periwinkle', action: 'panel.focus:globe' },
+  { id: 'feeds', label: 'FEEDS', tone: 'tan', action: 'panel.focus:feeds' },
+  { id: 'cii', label: 'STRESS', tone: 'lilac', action: 'panel.focus:cii' },
+  { id: 'markets', label: 'MARKETS', tone: 'periwinkle', action: 'panel.focus:markets' },
+  { id: 'energy', label: 'ENERGY', tone: 'ice', action: 'panel.focus:energy' },
+  { id: 'listen', label: 'LISTEN', tone: 'cream', action: 'voice.ptt' },
+  { id: 'theme', label: 'DISPLAY', tone: 'tan', action: 'theme.cycle' },
 ];
 
-function buildRail(doc: Document): HTMLElement {
-  const root = doc.createElement('div');
-  root.id = ROOT_ID;
-  root.className = 'lcars-chrome';
-  // Chrome is decoration plus not-yet-wired controls; until P1 gives the
-  // buttons real behaviour, exposing them to a screen reader would be
-  // announcing affordances that do nothing.
-  root.setAttribute('aria-hidden', 'true');
+const FRAME_CLASS = 'lcars-frame';
 
-  const rail = doc.createElement('nav');
-  rail.className = 'lcars-rail';
+/**
+ * LCARS screens carry four-digit codes beside every control. They're
+ * decorative in canon, so we derive them from the id — stable across reloads,
+ * which matters more than authenticity here. A code that reshuffles on every
+ * repaint reads as noise.
+ */
+function code(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return String((h % 9000) + 1000);
+}
 
-  const elbow = doc.createElement('div');
-  elbow.className = 'lcars-elbow';
-  rail.appendChild(elbow);
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  cls?: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text) n.textContent = text;
+  return n;
+}
 
-  for (const item of RAIL_ITEMS) {
-    const button = doc.createElement('button');
-    button.type = 'button';
-    button.className = 'lcars-rail-button';
-    button.dataset.wmAction = item.action;
-    button.disabled = true;
-    // The label sits in its own span so P1 can apply the Okudagram technique
-    // from louh/lcars: the span carries the BACKGROUND colour over a coloured
-    // bar, punching the text through it rather than painting glyphs on top.
-    const label = doc.createElement('span');
-    label.className = 'lcars-rail-label';
-    label.textContent = item.label;
-    button.appendChild(label);
-    rail.appendChild(button);
+function buildRail(ctx: ChromeContext): HTMLElement {
+  const rail = el('nav', 'lcars-rail');
+  rail.setAttribute('aria-label', 'Panels');
+
+  // Top cap — the rail's rounded head, above the elbow.
+  rail.appendChild(el('div', 'lcars-cap lcars-cap--top'));
+
+  for (const item of RAIL) {
+    const btn = el('button', `lcars-rail-btn lcars-tone-${item.tone}`);
+    btn.type = 'button';
+    btn.dataset.wmAction = item.action;
+    btn.appendChild(el('span', 'lcars-rail-code', code(item.id)));
+    btn.appendChild(el('span', 'lcars-rail-label', item.label));
+    btn.addEventListener('click', () => ctx.dispatch(item.action));
+    rail.appendChild(btn);
   }
 
-  root.appendChild(rail);
-  return root;
+  rail.appendChild(el('div', 'lcars-cap lcars-cap--bottom'));
+  return rail;
+}
+
+function buildHeader(): HTMLElement {
+  const header = el('header', 'lcars-header');
+  header.appendChild(el('div', 'lcars-elbow'));
+  const bar = el('div', 'lcars-header-bar');
+  bar.appendChild(el('span', 'lcars-header-status', 'ONLINE'));
+  bar.appendChild(el('h1', 'lcars-header-title', 'WORLD MONITOR'));
+  header.appendChild(bar);
+  header.appendChild(el('div', 'lcars-header-cap'));
+  return header;
+}
+
+function buildFooter(): HTMLElement {
+  const footer = el('footer', 'lcars-footer');
+  const voice = el('div', 'lcars-voice');
+  voice.dataset.voiceState = 'idle';
+  voice.appendChild(el('span', 'lcars-voice-dot'));
+  voice.appendChild(el('span', 'lcars-voice-text', 'STANDING BY'));
+  footer.appendChild(voice);
+  footer.appendChild(el('div', 'lcars-footer-bar'));
+  return footer;
 }
 
 export const lcarsChrome: ThemeChrome = {
-  mount(shell: HTMLElement): void {
-    const doc = shell.ownerDocument;
+  shell(host, ctx) {
     // Idempotent: a double mount (a re-render racing a theme change) must not
-    // produce two rails.
-    if (doc.getElementById(ROOT_ID)) return;
-    shell.classList.add(SHELL_CLASS);
-    shell.insertBefore(buildRail(doc), shell.firstChild);
-    markPanels(shell);
+    // produce two frames.
+    const mounted = host.querySelector(`:scope > .${FRAME_CLASS}`);
+    if (mounted instanceof HTMLElement) return () => unwrap(host, mounted);
+
+    // Preserve whatever the app already rendered, then re-parent it into the
+    // content well. Teardown puts it back exactly as found.
+    const original = [...host.childNodes];
+
+    const frame = el('div', FRAME_CLASS);
+    const header = buildHeader();
+    const body = el('div', 'lcars-body');
+    const rail = buildRail(ctx);
+    const content = el('main', 'lcars-content');
+    content.setAttribute(CONTENT_ATTRIBUTE, '');
+
+    for (const node of original) content.appendChild(node);
+
+    body.appendChild(rail);
+    body.appendChild(content);
+    frame.appendChild(header);
+    frame.appendChild(body);
+    frame.appendChild(buildFooter());
+    host.appendChild(frame);
+
+    return () => unwrap(host, frame);
   },
 
-  unmount(shell: HTMLElement): void {
-    shell.ownerDocument.getElementById(ROOT_ID)?.remove();
-    shell.classList.remove(SHELL_CLASS);
-    shell.style.removeProperty('--lcars-panel-count');
-    // An empty `class`/`style` attribute is still an attribute, and the cycle
-    // test compares attributes. Drop anything we emptied.
-    if (shell.getAttribute('class') === '') shell.removeAttribute('class');
-    if (shell.getAttribute('style') === '') shell.removeAttribute('style');
+  panel(host) {
+    host.classList.add('lcars-panel');
+    return () => {
+      host.classList.remove('lcars-panel');
+      // An empty `class` attribute is still an attribute, and the cycle test
+      // compares attributes.
+      if (host.getAttribute('class') === '') host.removeAttribute('class');
+    };
   },
 };
 
 /**
- * Counts the panel hosts the upstream seam marked.
+ * Reverses a shell mount: whatever is in the content well goes back to the
+ * host, in order, and the frame is removed.
  *
- * Read-only on purpose. The theme does not add `data-wm-panel` itself — that
- * attribute is written at the upstream seam so that BOTH the theme layer and
- * the P3 context snapshot read the same marker, rather than each maintaining
- * its own idea of what a panel is.
+ * Reads the content well at teardown time rather than closing over the node
+ * list captured at mount. Upstream re-renders the dashboard by assigning
+ * innerHTML, so the nodes present at mount are frequently not the nodes
+ * present now — restoring the captured list would re-attach detached markup
+ * and drop everything the dashboard has rendered since.
  */
-function markPanels(shell: HTMLElement): void {
-  const panels = shell.querySelectorAll(`[${PANEL_ATTRIBUTE}]`);
-  shell.style.setProperty('--lcars-panel-count', String(panels.length));
+function unwrap(host: HTMLElement, frame: HTMLElement): void {
+  const content = frame.querySelector<HTMLElement>(`[${CONTENT_ATTRIBUTE}]`);
+  if (content) {
+    // insertBefore(frame) rather than appendChild: the dashboard's markup goes
+    // back where the frame stood, not after any sibling added since.
+    while (content.firstChild) host.insertBefore(content.firstChild, frame);
+  }
+  frame.remove();
 }

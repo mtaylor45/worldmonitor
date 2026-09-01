@@ -2,42 +2,42 @@
  * Public entry point for the theme layer.
  *
  * Upstream reaches this module at exactly one seam: `bootThemes()` from
- * `src/main.ts`. The other two seams are DOM attributes and contain no code.
+ * `src/main.ts`. The other seam is a DOM attribute and contains no code.
  * See docs/UPSTREAM-DIFF.md.
  */
 
-import {
-  DEFAULT_THEME_ID,
-  PANEL_ATTRIBUTE,
-  SHELL_ATTRIBUTE,
-  THEME_ATTRIBUTE,
-  THEME_STORAGE_KEY,
-  ThemeEngine,
-  readStoredTheme,
-} from './engine';
+import { DEFAULT_THEME_ID, themes } from './engine';
 import { defaultTheme } from './default';
-import { lcarsBrightTheme, lcarsTheme } from './lcars';
-import { THEME_CHANGE_EVENT, type ThemeChangeDetail, type ThemeDefinition, type ThemeId } from './types';
+import { lcars, lcarsBright } from './lcars';
+import { ACTION_EVENT, type ActionDetail } from './types';
 
 export {
+  CONTENT_ATTRIBUTE,
   DEFAULT_THEME_ID,
   PANEL_ATTRIBUTE,
   SHELL_ATTRIBUTE,
   THEME_ATTRIBUTE,
-  THEME_CHANGE_EVENT,
   THEME_STORAGE_KEY,
   ThemeEngine,
-};
-export type { ThemeChangeDetail, ThemeDefinition, ThemeId };
+  dispatchAction,
+  themes,
+} from './engine';
+export { ACTION_EVENT, THEME_CHANGE_EVENT } from './types';
+export type {
+  ActionDetail,
+  ChromeContext,
+  ChromeMount,
+  ChromeTeardown,
+  Theme,
+  ThemeChangeDetail,
+  ThemeChrome,
+  ThemeTokens,
+  TokenMap,
+} from './types';
 
-let engine: ThemeEngine | null = null;
+themes.register(defaultTheme, lcars, lcarsBright);
 
-/** The themes registered at boot, in switcher order. */
-export const BUILTIN_THEMES: readonly ThemeDefinition[] = [
-  defaultTheme,
-  lcarsTheme,
-  lcarsBrightTheme,
-];
+let booted = false;
 
 /**
  * Reads the URL override for a theme, e.g. `?wm-theme=lcars`.
@@ -48,7 +48,7 @@ export const BUILTIN_THEMES: readonly ThemeDefinition[] = [
  * keyboard. Does not persist — a URL is a one-shot instruction, and writing it
  * to storage would make a debugging query string sticky.
  */
-function themeFromUrl(): ThemeId | null {
+function themeFromUrl(): string | null {
   try {
     return new URLSearchParams(window.location.search).get('wm-theme');
   } catch {
@@ -57,60 +57,55 @@ function themeFromUrl(): ThemeId | null {
 }
 
 /**
- * Initialise the theme layer and apply the persisted (or URL-pinned) theme.
+ * Call once during app boot, before the dashboard renders.
  *
- * Idempotent: a second call returns the existing engine rather than
- * re-registering, so an accidental double-invocation at the seam is harmless.
+ *   import { bootThemes } from './themes';
+ *   bootThemes();
  *
- * Never throws. This runs inside upstream's startup path on an unattended
- * kiosk, where an exception here would cost the whole dashboard for the sake
- * of its colour scheme.
+ * Wires the two actions the frame emits — `theme.cycle` from the rail button
+ * and `theme.set` from the voice layer — into the same handler, so speech and
+ * touch go through one code path.
+ *
+ * Returns a promise that settles once the active theme's stylesheet has
+ * loaded, but the seam deliberately does not await it: tokens, chrome and the
+ * theme attribute are all in place synchronously, and blocking upstream's
+ * startup on a stylesheet fetch would delay the dashboard for a kiosk that has
+ * already painted its frame.
+ *
+ * Idempotent, and never throws. This runs inside upstream's startup path on an
+ * unattended kiosk, where an exception here would cost the whole dashboard for
+ * the sake of its colour scheme.
  */
-export function bootThemes(): ThemeEngine {
-  if (engine) return engine;
-  const created = new ThemeEngine();
-  engine = created;
+export function bootThemes(): Promise<void> {
+  if (booted) return Promise.resolve();
+  booted = true;
 
   try {
-    for (const theme of BUILTIN_THEMES) created.register(theme);
+    window.addEventListener(ACTION_EVENT, (ev) => {
+      const { action, payload } = (ev as CustomEvent<ActionDetail>).detail ?? {};
 
-    const url = themeFromUrl();
-    if (url) {
-      created.apply(url, { persist: false });
-    } else {
-      created.apply(readStoredTheme() ?? DEFAULT_THEME_ID);
-    }
+      if (action === 'theme.cycle') {
+        const all = themes.list();
+        const i = all.findIndex((t) => t.id === themes.current?.id);
+        void themes.apply(all[(i + 1) % all.length]?.id ?? DEFAULT_THEME_ID);
+      }
+
+      if (action === 'theme.set' && typeof payload === 'string') {
+        if (themes.list().some((t) => t.id === payload)) void themes.apply(payload);
+      }
+    });
+
+    const pinned = themeFromUrl();
+    if (pinned) return themes.apply(pinned, { persist: false }).then(() => undefined);
+    return themes.init(DEFAULT_THEME_ID);
   } catch (error) {
     // console is deliberate: an unattended kiosk has no other operator channel.
     console.warn('[wm-themes] boot failed, staying on upstream default:', error);
+    return Promise.resolve();
   }
-
-  return created;
 }
 
-/** The booted engine, or null if `bootThemes()` has not run. */
-export function getThemeEngine(): ThemeEngine | null {
-  return engine;
-}
-
-/**
- * Switch themes. The `theme.set` action in the P3 registry resolves to this,
- * so rail button and voice command share one implementation.
- */
-export function setTheme(id: ThemeId): ThemeId {
-  return (engine ?? bootThemes()).apply(id);
-}
-
-/** Advance to the next registered theme. Backs the rail's `theme.cycle`. */
-export function cycleTheme(): ThemeId {
-  const active = engine ?? bootThemes();
-  const ids = active.list().map((theme) => theme.id);
-  if (ids.length === 0) return DEFAULT_THEME_ID;
-  const index = ids.indexOf(active.current());
-  return active.apply(ids[(index + 1) % ids.length] ?? DEFAULT_THEME_ID);
-}
-
-/** Test seam: drops the module-level engine so a suite can boot a fresh one. */
-export function resetThemeEngineForTests(): void {
-  engine = null;
+/** Test seam: lets a suite boot the module-level listener wiring again. */
+export function resetThemeBootForTests(): void {
+  booted = false;
 }

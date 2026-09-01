@@ -124,7 +124,7 @@ test.describe('P0 — default theme is upstream, unmodified', () => {
     await expect(page.locator(TOKEN_STYLE)).toHaveCount(1);
     expect(await page.locator(TOKEN_STYLE).textContent()).toBe('');
     // No theme chrome, and no stray shell class or inline custom property.
-    await expect(page.locator('#wm-lcars-chrome')).toHaveCount(0);
+    await expect(page.locator('.lcars-frame')).toHaveCount(0);
   });
 
   test('computes identically to a page with no theme engine at all', async ({ page }) => {
@@ -180,29 +180,32 @@ test.describe('P0 — default theme is upstream, unmodified', () => {
 
 test.describe('P0 — theme cycling is lossless', () => {
   test('twenty iterations leave the DOM structurally identical to boot', async ({ page }) => {
+    const start = new Date('2026-01-01T00:00:00Z');
+    await page.clock.install({ time: start });
     await loadDashboard(page, '?wm-theme=default');
+    await page.clock.pauseAt(new Date('2026-01-01T00:05:00Z'));
 
-    // Both captures and all sixty switches happen inside ONE synchronous block.
-    // `setTheme` is synchronous, so upstream cannot interleave a render between
-    // them — which matters because the dashboard rewrites panel bodies as feeds
-    // land, and a before/after pair straddling that would fail for reasons
-    // unrelated to theme chrome.
+    // Applying a theme is async (its stylesheet is fetched on demand), so the
+    // sixty switches cannot run in one synchronous block and upstream is free
+    // to interleave a render. Pausing the clock stops the timers that drive
+    // those renders, which is what makes a before/after DOM comparison mean
+    // "the theme layer changed something" rather than "a feed arrived".
     const { before, after } = await page.evaluate(async () => {
-      const themes = await import('/src/themes/index.ts');
+      const { themes } = await import('/src/themes/index.ts');
       const shell = () => document.querySelector('[data-wm-shell]')?.outerHTML ?? '';
 
       const captured = shell();
       for (let i = 0; i < 20; i += 1) {
-        themes.setTheme('lcars');
-        themes.setTheme('lcars-bright');
-        themes.setTheme('default');
+        await themes.apply('lcars');
+        await themes.apply('lcars-bright');
+        await themes.apply('default');
       }
       return { before: captured, after: shell() };
     });
 
     expect(after).toBe(before);
     await expect(page.locator(TOKEN_STYLE)).toHaveCount(1);
-    await expect(page.locator('#wm-lcars-chrome')).toHaveCount(0);
+    await expect(page.locator('.lcars-frame')).toHaveCount(0);
   });
 });
 
@@ -210,21 +213,21 @@ test.describe('P0 — switching and persistence', () => {
   test('a chosen theme survives a reload', async ({ page }) => {
     await loadDashboard(page);
     await page.evaluate(async () => {
-      const themes = await import('/src/themes/index.ts');
-      themes.setTheme('lcars');
+      const { themes } = await import('/src/themes/index.ts');
+      await themes.apply('lcars');
     });
     await expect(page.locator('html')).toHaveAttribute('data-wm-theme', 'lcars');
 
     await loadDashboard(page);
     await expect(page.locator('html')).toHaveAttribute('data-wm-theme', 'lcars');
-    await expect(page.locator('#wm-lcars-chrome')).toHaveCount(1);
+    await expect(page.locator('.lcars-frame')).toHaveCount(1);
   });
 
   test('a URL pin overrides storage without becoming sticky', async ({ page }) => {
     await loadDashboard(page);
     await page.evaluate(async () => {
-      const themes = await import('/src/themes/index.ts');
-      themes.setTheme('lcars');
+      const { themes } = await import('/src/themes/index.ts');
+      await themes.apply('lcars');
     });
 
     // The kiosk unit pins a theme in its launch URL; a debugging query string
@@ -246,6 +249,67 @@ test.describe('P0 — switching and persistence', () => {
   });
 });
 
+test.describe('P1 — LCARS frame', () => {
+  test('re-parents the dashboard into the content well without losing it', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // The frame is only correct if the real dashboard ends up inside it. A
+    // frame that renders beside upstream's markup, or replaces it, would still
+    // look right in a screenshot of the chrome alone.
+    await expect(page.locator('.lcars-frame')).toHaveCount(1);
+    await expect(page.locator('[data-wm-content] .main-content')).toHaveCount(1);
+    await expect(page.locator('[data-wm-content] [data-panel]').first()).toBeVisible();
+
+    // Header, rail and footer are all present and carry their live parts.
+    await expect(page.locator('.lcars-rail .lcars-rail-btn')).toHaveCount(8);
+    await expect(page.locator('.lcars-header-title')).toHaveText('WORLD MONITOR');
+    await expect(page.locator('.lcars-voice')).toHaveAttribute('data-voice-state', 'idle');
+  });
+
+  test('the panel slot reaches every upstream panel host', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const panels = await page.locator('[data-wm-content] [data-panel]').count();
+    expect(panels).toBeGreaterThan(0);
+    await expect(page.locator('[data-panel].lcars-panel')).toHaveCount(panels);
+  });
+
+  test('a rail button drives a real theme change through the action bus', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // DISPLAY dispatches `theme.cycle`, which bootThemes() wires to the engine.
+    // Rail button and voice command must resolve to the same code path, so
+    // exercising the button here is also the P3 contract under test.
+    await page.locator('[data-wm-action="theme.cycle"]').click();
+    await expect(page.locator('html')).not.toHaveAttribute('data-wm-theme', 'lcars');
+  });
+
+  test('no text in the chrome falls below the 13px floor', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // SCOPE.md §5 P1: legible at 2.5 m, nothing below 13px.
+    //
+    // Scoped to the CHROME, not `.lcars-frame *` — the dashboard now lives
+    // inside the frame, and upstream's own type scale is not this theme's to
+    // answer for yet. Bringing upstream panels up to the floor is part of the
+    // 12-column mapping still outstanding in P1.
+    const tooSmall = await page.evaluate(() => {
+      const offenders: string[] = [];
+      const chrome = document.querySelectorAll<HTMLElement>(
+        '.lcars-header *, .lcars-rail *, .lcars-footer *',
+      );
+      chrome.forEach((el) => {
+        if (!el.textContent?.trim()) return;
+        const size = Number.parseFloat(getComputedStyle(el).fontSize);
+        if (Number.isFinite(size) && size < 13) offenders.push(`${el.className}: ${size}px`);
+      });
+      return offenders;
+    });
+
+    expect(tooSmall).toEqual([]);
+  });
+});
+
 test.describe('P0 — kiosk geometry', () => {
   test('neither theme overflows the 1280x720 panel horizontally', async ({ page }) => {
     for (const theme of ['default', 'lcars', 'lcars-bright']) {
@@ -254,6 +318,11 @@ test.describe('P0 — kiosk geometry', () => {
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       );
       expect(overflow, `${theme} overflows horizontally`).toBeLessThanOrEqual(1);
+
+      const vertical = await page.evaluate(
+        () => document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      );
+      expect(vertical, `${theme} overflows vertically`).toBeLessThanOrEqual(1);
     }
   });
 });

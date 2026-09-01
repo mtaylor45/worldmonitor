@@ -605,7 +605,7 @@ if (urlParams.get('settings') === '1') {
 } else {
   installUtmInterceptor();
   markLcpDebug('wm:boot:app-construct');
-  bootThemes();
+  void bootThemes();
   const app = new App('app');
   app
     .init()

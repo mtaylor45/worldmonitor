@@ -1,108 +1,265 @@
 /* ============================================================
    LCARS theme — structural chrome.
 
-   Scoped entirely under :root[data-wm-theme="lcars"] so the sheet is inert
-   when another theme is active. Colour comes from the token layer the engine
-   writes (src/themes/lcars/tokens.ts); this file carries structure only —
-   the 5px gutter and the full-pill radius that make the theme read as LCARS.
+   Scoped under :root[data-wm-theme^="lcars"] so the sheet is inert when
+   another theme is active. Colour comes from the token layer the engine writes
+   (src/themes/lcars/tokens.ts); this file carries structure — the 5px gutter
+   and the full-pill radius that make the theme read as LCARS.
 
    Techniques adapted from louh/lcars (GPL-3.0). See docs/LCARS-ASSETS.md for
    the full review and attribution.
    ============================================================ */
 
-:root[data-wm-theme="lcars"] body {
+:root[data-wm-theme^="lcars"] body {
   /* A kiosk panel is never selected from; a stray drag-select on a 9" display
      is only ever an accident. Matches louh/lcars. */
   user-select: none;
 }
 
-/* The rail is an OVERLAY that reserves its own width, not a grid column.
-   Restructuring #app into `display: grid` was the first cut and it overflowed
-   1280px: upstream's children are laid out for normal block flow and each
-   became a grid item. Mapping upstream panels into a real LCARS 12-column grid
-   is P1 work (SCOPE.md §5); P0's job is to prove chrome can be mounted and
-   removed losslessly, which this does without disturbing upstream layout. */
-:root[data-wm-theme="lcars"] .wm-lcars-shelled {
-  box-sizing: border-box;
-  padding-left: var(--lcars-rail-width);
-  background: var(--lcars-ground);
+/* ---------- Frame ----------
+   Three rows: header, body, footer. The body splits into rail and content.
+
+   `min-height: 0` and `min-width: 0` appear on every grid child that contains
+   upstream markup. Without them a grid item's automatic minimum size is its
+   min-content width, which the dashboard's tables and tickers push far past
+   1280px — that is the whole reason a naive frame overflows the panel. */
+
+:root[data-wm-theme^="lcars"] [data-wm-shell] {
+  background: var(--wm-color-bg);
 }
 
-/* ---------- Left rail ---------- */
-
-:root[data-wm-theme="lcars"] {
-  --lcars-rail-width: 96px;
+.lcars-frame {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: var(--wm-space-gutter);
+  height: 100%;
+  min-height: 0;
+  padding: var(--wm-space-gutter);
+  box-sizing: border-box;
+  background: var(--wm-color-bg);
+  font-family: var(--wm-font-body);
 }
 
-.lcars-rail {
-  position: fixed;
-  inset: 0 auto 0 0;
-  z-index: 200;
-  box-sizing: border-box;
+.lcars-body {
+  display: grid;
+  grid-template-columns: var(--wm-space-rail) minmax(0, 1fr);
+  gap: var(--wm-space-gutter);
+  min-height: 0;
+  min-width: 0;
+}
+
+.lcars-content {
   display: flex;
   flex-direction: column;
-  gap: var(--lcars-gutter);
-  width: var(--lcars-rail-width);
-  padding: var(--lcars-gutter);
-  background: var(--lcars-ground);
-  /* The rail is chrome, not content: it must never introduce a scrollbar of
-     its own on a panel that cannot be scrolled by hand. */
+  min-height: 0;
+  min-width: 0;
+  /* The dashboard's own .main-content scrolls internally; the well must not
+     add a second scroll context or the panel gets nested scrollbars. */
+  overflow: hidden;
+  border-bottom-right-radius: var(--wm-radius-block);
+  background: var(--wm-color-bg);
+}
+
+/* Upstream's #app is `position: absolute; inset: 0; min-width: 100vw`. Its
+   children are now inside the content well instead, so they must be told to
+   fill it rather than the viewport. */
+.lcars-content > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Chrome sets its own base size rather than inheriting upstream's 12px body.
+   Deliberately NOT set on .lcars-frame: that would cascade into the content
+   well and rescale every upstream panel, which is the 12-column mapping's
+   decision to make, not the frame's. */
+.lcars-header,
+.lcars-rail,
+.lcars-footer {
+  font-size: var(--wm-font-size-label);
+}
+
+/* ---------- Header ---------- */
+
+.lcars-header {
+  display: grid;
+  grid-template-columns: var(--wm-space-rail) minmax(0, 1fr) auto;
+  gap: var(--wm-space-gutter);
+  height: var(--wm-space-header);
+  min-width: 0;
+}
+
+/* The elbow: the single most recognisable LCARS form. A filled block whose
+   inner corner is cut by a large radius, scaling with the row height rather
+   than shipped as a fixed-size asset. */
+.lcars-elbow {
+  background: var(--wm-color-tan);
+  border-top-left-radius: var(--wm-radius-elbow);
+  border-bottom-left-radius: var(--wm-radius-cap);
+  border-top-right-radius: var(--wm-radius-block);
+  border-bottom-right-radius: var(--wm-radius-block);
+}
+
+.lcars-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wm-space-block);
+  min-width: 0;
+  padding: 0 18px;
+  background: var(--wm-color-lilac);
+  color: var(--wm-color-text-invert);
+  border-radius: var(--wm-radius-block);
+}
+
+.lcars-header-status {
+  font-size: var(--wm-font-size-label);
+  letter-spacing: var(--wm-font-tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lcars-header-title {
+  margin: 0;
+  font-size: var(--wm-font-size-title);
+  font-weight: var(--wm-font-weight-bold);
+  letter-spacing: var(--wm-font-tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lcars-header-cap {
+  width: 52px;
+  background: var(--wm-color-cream);
+  border-top-right-radius: var(--wm-radius-cap);
+  border-bottom-right-radius: var(--wm-radius-cap);
+  border-top-left-radius: var(--wm-radius-block);
+  border-bottom-left-radius: var(--wm-radius-block);
+}
+
+/* ---------- Rail ---------- */
+
+.lcars-rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--wm-space-gutter);
+  min-height: 0;
+  /* Chrome is not content: the rail must never introduce a scrollbar of its
+     own on a panel nobody can scroll by hand. */
   overflow: hidden;
 }
 
-/* The elbow: a filled block whose inner corner is cut by a large radius. This
-   is the single most recognisable LCARS form, and it has to scale with the row
-   height rather than being a fixed-size asset. */
-.lcars-elbow {
-  height: calc(var(--lcars-row-height) * 2);
-  background: var(--lcars-1);
-  border-top-left-radius: calc(var(--lcars-row-height) * 1.5);
-  border-bottom-left-radius: var(--lcars-gutter);
-  border-top-right-radius: var(--lcars-gutter);
-  border-bottom-right-radius: var(--lcars-gutter);
+.lcars-cap {
+  flex: 0 0 18px;
+  background: var(--wm-color-tan);
 }
 
-.lcars-rail-button {
-  height: var(--lcars-row-height);
+.lcars-cap--top {
+  border-top-left-radius: var(--wm-radius-cap);
+  border-top-right-radius: var(--wm-radius-block);
+}
+
+.lcars-cap--bottom {
+  border-bottom-left-radius: var(--wm-radius-elbow);
+  border-bottom-right-radius: var(--wm-radius-block);
+}
+
+.lcars-rail-btn {
+  /* `flex: 1 1 0` with `min-height: 0`, not a fixed height: the rail must fit
+     eight buttons between two caps at 720px without overflowing, and shrink
+     gracefully if a shorter viewport turns up. */
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
   border: 0;
   padding: 0 10px;
+  color: var(--wm-color-text-invert);
+  font-family: var(--wm-font-body);
+  cursor: pointer;
   text-align: right;
-  background: var(--lcars-2);
-  color: var(--lcars-ground);
-  font-family: var(--font-body-base);
-  /* Cap-height match rather than a nominal size: ultra-condensed faces sit
-     small at a given font-size, and the block wants filling. Re-measure the
-     factor for Antonio in P1 — it is calibrated for Swiss 911. */
-  font-size: calc(var(--lcars-row-height) * var(--lcars-cap-factor) * 0.5);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
   /* Pill caps as a percentage radius, not 999px: this stays correct at any row
      height, where a fixed radius flattens as the block grows. */
   border-top-left-radius: 50% 50%;
   border-bottom-left-radius: 50% 50%;
-  border-top-right-radius: var(--lcars-gutter);
-  border-bottom-right-radius: var(--lcars-gutter);
+  border-top-right-radius: var(--wm-radius-block);
+  border-bottom-right-radius: var(--wm-radius-block);
 }
 
-.lcars-rail-button:nth-child(3n) {
-  background: var(--lcars-6);
-}
-.lcars-rail-button:nth-child(3n + 1) {
-  background: var(--lcars-5);
-}
-
-/* P0 renders the rail inert (see chrome.ts). Without this the disabled buttons
-   would read as greyed-out controls rather than as chrome. */
-.lcars-rail-button[disabled] {
-  opacity: 1;
-  cursor: default;
+.lcars-rail-code {
+  font-size: var(--wm-font-size-micro);
+  opacity: 0.65;
+  line-height: 1;
 }
 
 .lcars-rail-label {
-  /* 13px floor: SCOPE.md §5 P1 requires legibility at 2.5 m and nothing below
-     13px. The calc above can go smaller at low row heights, so clamp it. */
-  font-size: max(13px, 1em);
+  font-size: var(--wm-font-size-label);
+  font-weight: var(--wm-font-weight-bold);
+  letter-spacing: var(--wm-font-tracking-label);
   line-height: 1;
+  text-transform: uppercase;
+}
+
+.lcars-tone-tan { background: var(--wm-color-tan); }
+.lcars-tone-lilac { background: var(--wm-color-lilac); }
+.lcars-tone-periwinkle { background: var(--wm-color-periwinkle); }
+.lcars-tone-ice { background: var(--wm-color-ice); }
+.lcars-tone-cream { background: var(--wm-color-cream); }
+
+.lcars-rail-btn:focus-visible {
+  outline: 2px solid var(--wm-color-text);
+  outline-offset: -4px;
+}
+
+/* ---------- Footer ---------- */
+
+.lcars-footer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--wm-space-gutter);
+  height: var(--wm-space-footer);
+  min-width: 0;
+}
+
+.lcars-voice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  background: var(--wm-color-bg-panel);
+  color: var(--wm-color-voice-idle);
+  border-radius: var(--wm-radius-cap) var(--wm-radius-block) var(--wm-radius-block) var(--wm-radius-cap);
+  font-size: var(--wm-font-size-label);
+  letter-spacing: var(--wm-font-tracking-label);
+  white-space: nowrap;
+}
+
+.lcars-voice-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* P2 drives this attribute from the sidecar's WebSocket state. Defining all
+   three states now keeps the visual contract in one place. */
+.lcars-voice[data-voice-state='listening'] { color: var(--wm-color-voice-listening); }
+.lcars-voice[data-voice-state='speaking'] { color: var(--wm-color-voice-speaking); }
+
+.lcars-footer-bar {
+  min-width: 0;
+  background: var(--wm-color-ice);
+  border-radius: var(--wm-radius-block) var(--wm-radius-cap) var(--wm-radius-cap) var(--wm-radius-block);
+}
+
+/* ---------- Panels ---------- */
+
+.lcars-panel {
+  border-radius: var(--wm-radius-block);
 }
 
 /* ---------- Alert state ----------
@@ -110,7 +267,9 @@
    CII threshold crossing; defining it now keeps the one legitimate use of the
    colour in the same file as the rule that reserves it. */
 
-:root[data-wm-theme="lcars"][data-wm-alert="true"] .lcars-elbow,
-:root[data-wm-theme="lcars"][data-wm-alert="true"] .lcars-rail-button {
-  background: var(--lcars-alert);
+:root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-elbow,
+:root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-header-cap,
+:root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-rail-btn,
+:root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-cap {
+  background: var(--wm-color-alert);
 }

@@ -148,10 +148,11 @@ identical to boot. **Both verified** — `e2e/theme-engine-p0.spec.ts`.
 
 - Antonio self-hosted in `public/fonts/`, Google Fonts `@import` removed
 - Sound assets integrated, wired to the theme's `sounds` slot
-- Rail buttons bound to real panel-focus actions
-- Upstream panels mapped into the 12-column content grid
-- Both palette variants selectable (see §7) — *shipped early in P0 as
-  `lcars` and `lcars-bright`*
+- ~~Rail buttons bound to real panel-focus actions~~ — done; they dispatch
+  `panel.focus:<key>` on the `wm:action` bus, awaiting P3 handlers
+- Upstream panels mapped into the 12-column content grid — **outstanding**
+- Both palette variants selectable (see §7) — *shipped early as `lcars` and
+  `lcars-bright`*
 
 **Acceptance:** legible from 2.5 m. No text below 13px. No horizontal scroll.
 Kiosk renders with zero network dependency for chrome.
@@ -161,10 +162,13 @@ radius, not the exact hex values. Salmon `#cc6666` is alert-only — if it becom
 decorative the theme stops communicating. Full asset guidance in
 `docs/LCARS-ASSETS.md`.
 
-P0's LCARS chrome is deliberately a **stub**: a fixed-position rail that
-reserves its own width and does not restructure upstream's shell. Turning `#app`
-into a grid was tried and overflowed 1280px, because upstream's children are
-laid out for normal block flow. The 12-column mapping is the real work here.
+The frame itself is **built**: rail with working actions, header elbow, footer
+voice indicator, and the dashboard re-parented into `[data-wm-content]`. It fits
+1280x720 with no overflow in either direction.
+
+What remains is the **12-column panel mapping**. The rail takes 104px and
+upstream's header does not reflow, so its right-hand controls are clipped at
+1280px — visible, and the single most obvious thing still wrong with the theme.
 
 ---
 
@@ -204,8 +208,9 @@ is generated from the action registry, not maintained separately.
 **Notes.** Action strings are `namespace.verb` (`theme.set`, `voice.ptt`,
 `panel.focus`). Keep them in one place — the voice tool schema derives from it.
 The P0 rail already carries `data-wm-action` attributes in this form, and
-`setTheme()` / `cycleTheme()` are the implementations `theme.set` and
-`theme.cycle` will resolve to.
+`bootThemes()` already handles `theme.cycle` and `theme.set` on that bus, and
+the rail's DISPLAY button dispatches through it — so rail and voice resolve to
+one code path today.
 
 The context snapshot reads `[data-panel]` — upstream's own attribute, whose
 value is the panel key. That is what lets the snapshot name a panel to the LLM

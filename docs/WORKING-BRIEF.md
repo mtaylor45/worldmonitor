@@ -81,11 +81,16 @@ borders and the text ramp instead; unmodified upstream panels inherit those.
 **Salmon `#cc6666` is alert-only.** One definition, one rule. If it becomes
 decorative the theme stops communicating.
 
-**Chrome must be losslessly removable.** Everything a theme mounts goes inside
-one container element, `mount` is idempotent, and `unmount` is its exact
-inverse — including dropping a `class` or `style` attribute it emptied, because
-an empty attribute is still an attribute. Twenty theme cycles must leave the DOM
-identical; there is a test.
+**Chrome must be losslessly removable.** A chrome slot returns its own
+teardown, and that teardown is its exact inverse — including dropping a `class`
+attribute it emptied, because an empty attribute is still an attribute. Twenty
+theme cycles must leave the DOM identical; there is a test.
+
+**Teardown reads the DOM, it does not replay it.** Upstream rebuilds the
+dashboard by assigning `innerHTML`, so the nodes present when chrome mounted are
+usually not the nodes present when it unmounts. `unwrap()` moves whatever is in
+the content well back to the host; restoring a captured node list would
+re-attach detached markup and drop everything rendered since.
 
 **Action strings are `namespace.verb`** (`theme.set`, `voice.ptt`,
 `panel.focus`). One registry, and the P3 voice tool schema derives from it.
@@ -134,10 +139,12 @@ Two traps, both hit during P0:
 
 P0 complete and verified. P1 not started.
 
-P0's LCARS is deliberately a **stub** — a fixed-position rail that reserves its
-own width, with inert buttons. It exists to prove chrome mounts and unmounts
-losslessly. It does not attempt the 12-column panel mapping, which is P1's real
-work, and it does not load fonts or sounds yet.
+The LCARS frame is fully built: rail with working actions, header elbow, footer
+voice indicator, and the dashboard re-parented into `[data-wm-content]`.
+
+Still outstanding for P1: the **12-column panel mapping**. The rail takes 104px
+and upstream's header does not reflow, so its right-hand controls are clipped at
+1280px. Antonio and the sound assets are also not loaded yet.
 
 The kiosk profile in `deploy/kiosk/` is written but **not verified on hardware**;
 the panel has not been sourced.

@@ -146,11 +146,11 @@ are worth knowing before editing this spec:
 Sixty switches across all three registered themes, then `outerHTML` of the
 shell compared against the capture from before the loop.
 
-Both captures and all sixty switches happen inside **one synchronous block**.
-`setTheme` is synchronous, so upstream cannot interleave a render between them
-— which matters, because the dashboard rewrites panel bodies as feeds land and
-a before/after pair straddling that would fail for reasons unrelated to theme
-chrome.
+Applying a theme is async — a theme's stylesheet is fetched on demand — so the
+switches cannot run in one synchronous block and upstream is free to interleave
+a render. The spec pauses Playwright's clock first, which stops the timers that
+drive those renders. That is what makes the before/after comparison mean "the
+theme layer changed something" rather than "a feed arrived".
 
 What makes the criterion satisfiable is a set of rules in the engine, each
 paired with its exact inverse:
@@ -158,13 +158,17 @@ paired with its exact inverse:
 | Mutation | Inverse |
 |---|---|
 | token `<style>` element rewritten, never appended to | rewritten to `''` |
-| chrome mounted into one container element | that element removed |
+| chrome mounted into one container element | the teardown it returned |
+| dashboard re-parented into the content well | moved back where the frame stood |
 | `data-wm-theme` set | removed, not set to a sentinel |
-| shell marker class added | removed, and an emptied `class` attribute dropped |
-| `--lcars-panel-count` inline property set | removed, and an emptied `style` attribute dropped |
+| `lcars-panel` class added per panel | removed, and an emptied `class` attribute dropped |
+| stylesheet `<link>` injected | removed; the engine owns the tag |
 
-The last two matter more than they look: an empty `class=""` is still an
-attribute, and `outerHTML` compares attributes.
+The last two matter more than they look. An empty `class=""` is still an
+attribute and `outerHTML` compares attributes; and a theme's stylesheet is
+loaded as `import('./lcars.css?url')` plus a `<link>` the engine can remove,
+rather than a bare CSS import, precisely because Vite's injected `<style>`
+never comes back out.
 
 ### Running it
 
@@ -182,11 +186,17 @@ npx vitest run --config vitest.dom.config.mts tests/dom/theme-engine.test.mts
 | Fork running locally at 1280x720 | Done |
 | Theme engine wired at upstream seams | Done — two seams, not three (see UPSTREAM-DIFF.md) |
 | `default` theme | Done, identity by design |
-| Theme switching, persisted across reload | Done — `setTheme()` / `cycleTheme()` + `localStorage` |
+| Theme switching, persisted across reload | Done — rail button, `wm:action` bus, URL pin, `localStorage` |
 | Screenshot-diff and cycle-stability acceptance | Done, passing |
 | Kiosk profile (`cage` + Chromium + unit) | Written, **not verified on hardware** — the panel has not been sourced |
 
-Switching is currently programmatic (`setTheme`, `cycleTheme`) plus a URL pin.
-The rail button that drives it is P1, because the rail is LCARS chrome and P0's
-LCARS is deliberately a stub: it proves chrome can be mounted and removed
-losslessly, and does not attempt the 12-column panel mapping.
+Switching runs through the `wm:action` bus: the rail's DISPLAY button dispatches
+`theme.cycle`, `bootThemes()` handles it, and the P3 voice layer will dispatch
+`theme.set` onto the same bus. Rail button and voice command therefore resolve
+to one code path, which is the P3 acceptance criterion brought forward.
+
+The LCARS frame is now fully built — rail, header elbow, footer voice
+indicator, and the dashboard re-parented into the content well. What remains
+for P1 is the 12-column panel mapping: the rail takes 104px, and upstream's
+header does not reflow, so its right-hand controls are clipped at 1280px. See
+`docs/UPSTREAM-DIFF.md`.

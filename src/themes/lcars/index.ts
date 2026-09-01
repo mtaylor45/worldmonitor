@@ -1,4 +1,4 @@
-import type { ThemeDefinition } from '../types';
+import type { Theme } from '../types';
 import { lcarsChrome } from './chrome';
 import { lcarsTokens, type LcarsPalette } from './tokens';
 
@@ -9,7 +9,7 @@ import { lcarsTokens, type LcarsPalette } from './tokens';
  *
  * Provenance caveat: these .ogg files come from `louh/lcars` with an unstated
  * origin and are likely show-sourced. Fine for a personal LAN kiosk; they must
- * be replaced before any public distribution. Recorded in docs/LCARS-ASSETS.md.
+ * be replaced before any public distribution. See docs/LCARS-ASSETS.md.
  */
 const SOUNDS = {
   wake: '/sounds/panel_beep_07.ogg',
@@ -19,18 +19,26 @@ const SOUNDS = {
   alert: '/sounds/panel_beep_08.ogg',
 } as const;
 
-export function createLcarsTheme(palette: LcarsPalette): ThemeDefinition {
+/** The kiosk panel this theme is laid out for (SCOPE.md §2). */
+const KIOSK_TARGET = { width: 1280, height: 720, label: '9in kiosk' } as const;
+
+export function createLcarsTheme(palette: LcarsPalette): Theme {
+  const drexler = palette === 'drexler';
   return {
-    id: palette === 'drexler' ? 'lcars' : 'lcars-bright',
-    label: palette === 'drexler' ? 'LCARS' : 'LCARS (bright)',
+    id: drexler ? 'lcars' : 'lcars-bright',
+    name: drexler ? 'LCARS' : 'LCARS (bright)',
+    description: drexler
+      ? 'Screen-accurate Drexler palette, muted.'
+      : 'Higher-contrast palette for legibility at distance.',
     tokens: lcarsTokens(palette),
-    loadStyles: () => import('./lcars.css'),
+    stylesheet: () => import('./lcars.css?url'),
     chrome: lcarsChrome,
+    targets: [KIOSK_TARGET],
     sounds: SOUNDS,
   };
 }
 
 /** Variant A — Drexler, screen-accurate. */
-export const lcarsTheme = createLcarsTheme('drexler');
+export const lcars = createLcarsTheme('drexler');
 /** Variant B — bright, higher contrast at distance. */
-export const lcarsBrightTheme = createLcarsTheme('bright');
+export const lcarsBright = createLcarsTheme('bright');

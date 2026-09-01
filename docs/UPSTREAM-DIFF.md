@@ -98,6 +98,7 @@ kept locally as an ignored copy.
 |---|---|---|---|
 | `louh/lcars` | GPL-3.0 | `src/themes/lcars/tokens.ts` | Drexler palette custom properties |
 | `louh/lcars` | GPL-3.0 | `src/themes/lcars/lcars.css` | Pill-cap radius, cap-height factor, `user-select` technique |
+| `louh/lcars` | GPL-3.0 | `src/themes/lcars/chrome.ts` | Frame composition (rail / elbow / content well), decorative four-digit control codes |
 
 GPL-3.0 is compatible with this fork's AGPL-3.0 via AGPLv3 §13; the combined
 work is AGPL. Attribution is carried in a header comment on each file above and
@@ -107,6 +108,21 @@ Sound assets (`public/sounds/*.ogg`) are **not yet vendored** — the slots are
 declared in `src/themes/lcars/index.ts` and the files land in P1. Their origin
 is unstated and they are likely show-sourced: acceptable for a personal LAN
 kiosk, and to be replaced before any public distribution.
+
+---
+
+## Known consequences of the LCARS frame
+
+The frame re-parents upstream's markup into a content well 104px narrower than
+the viewport. Upstream's header does not reflow at that width, so its
+right-hand controls (Sign In, Create account) are clipped at 1280x720.
+
+This is **not** a layout bug in the frame — the page does not overflow in either
+direction, and `.main-content` clips rather than scrolls, which is upstream's
+own behaviour. It is the 12-column panel mapping still owed by P1. Recorded
+here because it is the first thing a reviewer will notice in a screenshot.
+
+Nothing about it touches an upstream file.
 
 ---
 

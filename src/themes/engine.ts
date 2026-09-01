@@ -5,34 +5,46 @@
  *
  *   1. Cycling themes must be lossless. P0 acceptance is twenty theme cycles
  *      leaving the DOM structurally identical to boot, so every mutation the
- *      engine makes is paired with an exact inverse: the token style element is
- *      rewritten rather than appended to, chrome teardown always runs before
- *      the next mount, and the shell attribute is removed rather than set to a
- *      sentinel.
+ *      engine makes is paired with an exact inverse: chrome mounts return their
+ *      own teardown, the token style element is rewritten rather than appended
+ *      to, stylesheet <link>s are owned and removed, and the shell attribute is
+ *      removed rather than set to a sentinel.
  *   2. The engine must never throw into upstream startup. `bootThemes()` is
  *      called from `src/main.ts`, ahead of the dashboard; a bad stored value or
  *      a blocked localStorage must degrade to the default theme, not a blank
  *      kiosk that nobody is present to reboot.
- *   3. Applying a theme is synchronous. Stylesheet loading is not, and is
- *      deliberately not awaited by `apply()` — see `applyThemeStyles`.
+ *   3. Tokens land synchronously. Stylesheets and chrome do too, where they
+ *      can; only the stylesheet fetch is async, and nothing waits on it.
  */
 
-import { THEME_CHANGE_EVENT, type ThemeChangeDetail, type ThemeDefinition, type ThemeId } from './types';
+import {
+  ACTION_EVENT,
+  THEME_CHANGE_EVENT,
+  type ActionDetail,
+  type ChromeContext,
+  type ChromeTeardown,
+  type Theme,
+  type ThemeChangeDetail,
+  type ThemeTokens,
+  type TokenMap,
+} from './types';
 
 /** Attribute the active theme id is published on, for CSS and for tests. */
 export const THEME_ATTRIBUTE = 'data-wm-theme';
 /** Marks the element chrome mounts into. Set at an upstream seam. */
 export const SHELL_ATTRIBUTE = 'data-wm-shell';
+/** Marks the element a theme's shell chrome renders the dashboard into. */
+export const CONTENT_ATTRIBUTE = 'data-wm-content';
+
 /**
  * Attribute identifying an upstream panel host.
  *
- * This is UPSTREAM's own attribute, not one we add. SCOPE.md §4 budgeted a
- * third seam to stamp `data-wm-panel` onto panel hosts; that seam turned out to
- * be unnecessary, because upstream already marks every panel with
+ * This is UPSTREAM's own attribute, not one we add. SCOPE.md §4.2 budgeted a
+ * seam to stamp `data-wm-panel` onto panel hosts; that seam turned out to be
+ * unnecessary, because upstream already marks every panel with
  * `data-panel="<key>"` and reads it back in fourteen places (panel-layout,
- * MobilePanelNav, PanelTabBar, tv-mode, search-selection-dispatcher, ...). Rule
- * §4.4 — prefer a DOM hook over an upstream edit — applies directly, so we
- * consume the existing attribute and spend two seams instead of three.
+ * MobilePanelNav, PanelTabBar, tv-mode, search-selection-dispatcher, ...).
+ * Rule §4.4 — prefer a DOM hook over an upstream edit — applies directly.
  *
  * Kept as a constant so that if upstream ever renames it, the fix is this line
  * rather than a search across our tree. The value doubles as the panel key,
@@ -43,101 +55,116 @@ export const PANEL_ATTRIBUTE = 'data-panel';
 export const THEME_STORAGE_KEY = 'wm-theme';
 export const DEFAULT_THEME_ID = 'default';
 
-/** `id` of the engine-owned <style> element carrying token overrides. */
 const TOKEN_STYLE_ID = 'wm-theme-tokens';
+const STYLESHEET_LINK_ATTR = 'data-wm-theme-style';
+
+/** Emits an action on the shared bus. Rail buttons and P3 voice both use it. */
+export function dispatchAction(action: string, payload?: unknown): void {
+  window.dispatchEvent(new CustomEvent<ActionDetail>(ACTION_EVENT, { detail: { action, payload } }));
+}
 
 export class ThemeEngine {
-  private readonly themes = new Map<ThemeId, ThemeDefinition>();
-  private activeId: ThemeId | null = null;
-  private mountedChromeOn: HTMLElement | null = null;
-  private chromeObserver: MutationObserver | null = null;
+  private readonly registry = new Map<string, Theme>();
+  private active: Theme | undefined;
+  /** Teardowns for everything the active theme mounted, in mount order. */
+  private teardowns: ChromeTeardown[] = [];
+  private shellObserver: MutationObserver | null = null;
+  private panelObserver: MutationObserver | null = null;
+  /** Panel hosts the active theme's `panel` slot is currently mounted on. */
+  private readonly mountedPanels = new WeakSet<HTMLElement>();
 
   constructor(private readonly doc: Document = document) {}
 
-  register(theme: ThemeDefinition): void {
-    this.themes.set(theme.id, theme);
+  register(...themes: Theme[]): void {
+    for (const theme of themes) this.registry.set(theme.id, theme);
   }
 
-  list(): readonly ThemeDefinition[] {
-    return [...this.themes.values()];
+  list(): Theme[] {
+    return [...this.registry.values()];
   }
 
-  get(id: ThemeId): ThemeDefinition | undefined {
-    return this.themes.get(id);
-  }
-
-  current(): ThemeId {
-    return this.activeId ?? DEFAULT_THEME_ID;
+  get current(): Theme | undefined {
+    return this.active;
   }
 
   /**
-   * The element chrome mounts into.
+   * Applies the persisted theme, or `fallbackId` when there is none.
    *
-   * Falls back to `document.body` when the shell seam is absent so the engine
-   * still functions against an upstream file we have not patched — the seam is
-   * an optimisation for where chrome lands, never a hard dependency. Returns
-   * null only pre-`<body>`, which `apply()` treats as "tokens only".
+   * Async because a theme's stylesheet is fetched on demand; callers that must
+   * not block on the network (the boot seam) simply do not await it.
    */
+  async init(fallbackId: string = DEFAULT_THEME_ID): Promise<void> {
+    await this.apply(readStoredTheme() ?? fallbackId, { persist: false });
+  }
+
+  /**
+   * Switch to `id`. Unknown ids fall back to the default theme rather than
+   * throwing, so a stale persisted value or a mis-heard voice command degrades
+   * to a readable dashboard.
+   */
+  async apply(id: string, options: { persist?: boolean } = {}): Promise<string> {
+    const { persist = true } = options;
+    const theme = this.registry.get(id) ?? this.registry.get(DEFAULT_THEME_ID);
+    if (!theme) return DEFAULT_THEME_ID;
+    if (this.active?.id === theme.id) return theme.id;
+
+    const previous = this.active?.id ?? null;
+
+    // Teardown first, and unconditionally: chrome must never outlive its theme.
+    this.teardownChrome();
+    this.removeStylesheet();
+
+    this.writeTokens(theme);
+    this.doc.documentElement.setAttribute(THEME_ATTRIBUTE, theme.id);
+    this.active = theme;
+
+    // Chrome mounts before the stylesheet resolves. The frame is styleless for
+    // one frame on a cold switch, which is the right trade on a kiosk: the DOM
+    // the dashboard renders into must exist before upstream looks for it.
+    this.mountChrome(theme);
+    this.watchShell(theme);
+    this.warnOffTarget(theme);
+
+    if (persist) writeStoredTheme(theme.id);
+    this.emit({ previous, current: theme.id });
+
+    await this.loadStylesheet(theme);
+    return theme.id;
+  }
+
+  /** The element chrome mounts into. */
   shell(): HTMLElement | null {
     return this.doc.querySelector<HTMLElement>(`[${SHELL_ATTRIBUTE}]`) ?? this.doc.body ?? null;
   }
 
   /**
-   * Switch to `id`. Unknown ids fall back to the default theme rather than
-   * throwing, so a stale persisted value or a bad voice command degrades to a
-   * readable dashboard.
-   *
-   * Returns the id actually applied.
+   * Where the dashboard renders. A theme's shell chrome is required to leave a
+   * `[data-wm-content]` element behind; without chrome this is the shell.
    */
-  apply(id: ThemeId, options: { persist?: boolean } = {}): ThemeId {
-    const { persist = true } = options;
-    const resolved = this.themes.has(id) ? id : DEFAULT_THEME_ID;
-    if (resolved === this.activeId) return resolved;
-
-    const previous = this.activeId;
-    const theme = this.themes.get(resolved);
-
-    // Teardown first, and unconditionally: chrome must never outlive its theme,
-    // and unmounting from the element we actually mounted on (not the element
-    // currently matching the seam) is what keeps repeated cycles lossless even
-    // if upstream re-rendered the shell underneath us.
-    this.stopWatchingChrome();
-    this.unmountChrome(previous);
-
-    this.writeTokens(theme);
-    this.doc.documentElement.setAttribute(THEME_ATTRIBUTE, resolved);
-    this.activeId = resolved;
-
-    if (theme) {
-      this.mountChrome(theme);
-      this.watchChrome(theme);
-      void applyThemeStyles(theme);
-    }
-
-    if (persist) writeStoredTheme(resolved);
-    this.emit({ previous, current: resolved });
-    return resolved;
+  content(): HTMLElement | null {
+    return this.doc.querySelector<HTMLElement>(`[${CONTENT_ATTRIBUTE}]`) ?? this.shell();
   }
+
+  // ---------------------------------------------------------------- tokens
 
   /**
    * Rewrites (never appends to) the single engine-owned style element.
    *
    * Tokens go into a `[data-wm-theme="<id>"]` rule on `:root` rather than
-   * inline styles: inline custom properties on `<html>` would be invisible to
-   * `getComputedStyle` diffing in tests and impossible for a theme stylesheet
-   * to override. A theme with no tokens leaves the element empty rather than
-   * removing it, so the node count stays constant across cycles.
+   * inline styles: inline custom properties on `<html>` would be impossible for
+   * a theme stylesheet to override, and harder to inspect.
+   *
+   * A theme with no tokens leaves the element empty rather than removing it, so
+   * the node count stays constant across cycles.
    */
-  private writeTokens(theme: ThemeDefinition | undefined): void {
+  private writeTokens(theme: Theme): void {
     const style = this.tokenStyleElement();
-    const tokens = theme?.tokens;
-    if (!tokens || Object.keys(tokens).length === 0) {
+    const declarations = flattenTokens(theme.tokens);
+    if (declarations.length === 0) {
       style.textContent = '';
       return;
     }
-    const body = Object.entries(tokens)
-      .map(([name, value]) => `  --${name}: ${value};`)
-      .join('\n');
+    const body = declarations.map(([name, value]) => `  ${name}: ${value};`).join('\n');
     style.textContent = `:root[${THEME_ATTRIBUTE}="${theme.id}"] {\n${body}\n}\n`;
   }
 
@@ -146,30 +173,103 @@ export class ThemeEngine {
     if (existing instanceof HTMLStyleElement) return existing;
     const style = this.doc.createElement('style');
     style.id = TOKEN_STYLE_ID;
-    // Appended to <head> last so it wins over upstream's :root block at equal
-    // specificity. The attribute selector raises specificity anyway; source
-    // order is belt-and-braces against a late-injected upstream stylesheet.
     (this.doc.head ?? this.doc.documentElement).appendChild(style);
     return style;
   }
 
-  private mountChrome(theme: ThemeDefinition): void {
-    if (!theme.chrome) return;
-    const shell = this.shell();
-    if (!shell) return;
-    this.mountChromeOn(theme, shell);
+  // ------------------------------------------------------------ stylesheet
+
+  private async loadStylesheet(theme: Theme): Promise<void> {
+    if (!theme.stylesheet) return;
+    try {
+      const mod = await theme.stylesheet();
+      // The theme may have changed while the import was in flight.
+      if (this.active?.id !== theme.id) return;
+      const link = this.doc.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = mod.default;
+      link.setAttribute(STYLESHEET_LINK_ATTR, theme.id);
+      (this.doc.head ?? this.doc.documentElement).appendChild(link);
+    } catch (error) {
+      // Vite's preload helper rejects a CSS import with "Unable to preload CSS
+      // for <url>" when the injected link errors, and an unconsumed rejection
+      // surfaces as an unhandled error. Upstream hit exactly this with
+      // happy-theme.css (see bootstrap/variant-theme.ts); same contract, kept
+      // in our tree so we do not depend on the shape of an upstream export.
+      report(`stylesheet failed to load for "${theme.id}"`, error);
+    }
   }
 
-  private mountChromeOn(theme: ThemeDefinition, shell: HTMLElement): void {
-    if (!theme.chrome) return;
-    try {
-      theme.chrome.mount(shell);
-      this.mountedChromeOn = shell;
-    } catch (error) {
-      // A theme that cannot render its chrome must not take the dashboard with
-      // it; the tokens are already applied and upstream's own UI is intact.
-      reportThemeFailure(`chrome mount failed for "${theme.id}"`, error);
-      this.mountedChromeOn = null;
+  private removeStylesheet(): void {
+    this.doc.querySelectorAll(`link[${STYLESHEET_LINK_ATTR}]`).forEach((link) => {
+      link.remove();
+    });
+  }
+
+  // ---------------------------------------------------------------- chrome
+
+  private context(theme: Theme): ChromeContext {
+    return { dispatch: dispatchAction, themeId: theme.id };
+  }
+
+  private mountChrome(theme: Theme): void {
+    const chrome = theme.chrome;
+    if (!chrome) return;
+    const shell = this.shell();
+    if (!shell) return;
+
+    if (chrome.shell) {
+      try {
+        this.teardowns.push(chrome.shell(shell, this.context(theme)));
+      } catch (error) {
+        // A theme that cannot render its chrome must not take the dashboard
+        // with it; tokens are already applied and upstream's UI is intact.
+        report(`shell chrome failed to mount for "${theme.id}"`, error);
+      }
+    }
+
+    if (chrome.panel) {
+      this.mountPanels(theme);
+      this.watchPanels(theme);
+    }
+  }
+
+  private mountPanels(theme: Theme): void {
+    const mount = theme.chrome?.panel;
+    if (!mount) return;
+    const root = this.content() ?? this.shell();
+    if (!root) return;
+    root.querySelectorAll<HTMLElement>(`[${PANEL_ATTRIBUTE}]`).forEach((host) => {
+      if (this.mountedPanels.has(host)) return;
+      try {
+        const teardown = mount(host, this.context(theme));
+        this.mountedPanels.add(host);
+        this.teardowns.push(() => {
+          this.mountedPanels.delete(host);
+          teardown();
+        });
+      } catch (error) {
+        report(`panel chrome failed to mount for "${theme.id}"`, error);
+      }
+    });
+  }
+
+  private teardownChrome(): void {
+    this.shellObserver?.disconnect();
+    this.shellObserver = null;
+    this.panelObserver?.disconnect();
+    this.panelObserver = null;
+
+    // Reverse order: the shell mounted first and must come out last, or a panel
+    // teardown would be reaching into a subtree the shell already reclaimed.
+    const pending = this.teardowns.reverse();
+    this.teardowns = [];
+    for (const teardown of pending) {
+      try {
+        teardown();
+      } catch (error) {
+        report('chrome teardown failed', error);
+      }
     }
   }
 
@@ -179,42 +279,49 @@ export class ThemeEngine {
    * `bootThemes()` runs before `new App('app')`, so chrome mounted at boot is
    * wiped by upstream's first render — and again by any later re-render, since
    * the dashboard rebuilds panel markup by assigning innerHTML. Watching for it
-   * keeps the theme layer working without spending a fourth upstream seam on a
+   * keeps the theme layer working without spending an upstream seam on a
    * post-render hook, and without depending on upstream's render timing.
-   *
-   * Safe against feedback loops because `mount` is required to be idempotent:
-   * the re-mount either adds the chrome back (one mutation, then quiet) or does
-   * nothing at all.
    */
-  private watchChrome(theme: ThemeDefinition): void {
-    if (!theme.chrome || typeof MutationObserver === 'undefined') return;
+  private watchShell(theme: Theme): void {
+    if (!theme.chrome?.shell || typeof MutationObserver === 'undefined') return;
+    const shell = this.shell();
+    if (!shell) return;
+
     const observer = new MutationObserver(() => {
-      if (this.activeId !== theme.id) return;
-      const shell = this.shell();
-      if (shell) this.mountChromeOn(theme, shell);
+      if (this.active?.id !== theme.id) return;
+      // Chrome is intact if its content well is still in the document.
+      if (shell.querySelector(`[${CONTENT_ATTRIBUTE}]`)) return;
+      // Drop the stale teardowns first: they close over nodes upstream has
+      // already discarded, so running them would re-attach detached markup.
+      this.teardowns = [];
+      this.mountChrome(theme);
     });
-    const target = this.shell();
-    if (!target) return;
-    observer.observe(target, { childList: true, subtree: false });
-    this.chromeObserver = observer;
+    observer.observe(shell, { childList: true, subtree: false });
+    this.shellObserver = observer;
   }
 
-  private stopWatchingChrome(): void {
-    this.chromeObserver?.disconnect();
-    this.chromeObserver = null;
+  /** Upstream adds and removes panels at runtime; the panel slot follows. */
+  private watchPanels(theme: Theme): void {
+    if (typeof MutationObserver === 'undefined') return;
+    const root = this.content() ?? this.shell();
+    if (!root) return;
+    const observer = new MutationObserver(() => {
+      if (this.active?.id !== theme.id) return;
+      this.mountPanels(theme);
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    this.panelObserver = observer;
   }
 
-  private unmountChrome(previousId: ThemeId | null): void {
-    const host = this.mountedChromeOn;
-    this.mountedChromeOn = null;
-    if (!host || previousId === null) return;
-    const chrome = this.themes.get(previousId)?.chrome;
-    if (!chrome) return;
-    try {
-      chrome.unmount(host);
-    } catch (error) {
-      reportThemeFailure(`chrome unmount failed for "${previousId}"`, error);
-    }
+  // ----------------------------------------------------------------- misc
+
+  private warnOffTarget(theme: Theme): void {
+    if (!theme.targets?.length || typeof window === 'undefined') return;
+    const { innerWidth: w, innerHeight: h } = window;
+    if (!w || !h) return;
+    if (theme.targets.some((t) => t.width === w && t.height === h)) return;
+    const tuned = theme.targets.map((t) => `${t.width}x${t.height}`).join(', ');
+    report(`"${theme.id}" is tuned for ${tuned}; running at ${w}x${h}`, 'off-target viewport');
   }
 
   private emit(detail: ThemeChangeDetail): void {
@@ -223,28 +330,26 @@ export class ThemeEngine {
 }
 
 /**
- * Loads a theme's stylesheet, swallowing the rejection.
+ * Expands the grouped token maps into CSS declarations.
  *
- * Vite's preload helper rejects a CSS-only dynamic import with "Unable to
- * preload CSS for <url>" when the injected <link> errors, and an unconsumed
- * `void import(...)` surfaces as an unhandled rejection. Upstream hit exactly
- * this with happy-theme.css and documents it in `bootstrap/variant-theme.ts`;
- * this is the same contract, kept in our own tree so we do not depend on the
- * shape of an upstream export.
+ * The `--wm-*` groups are our own semantic vocabulary. `upstream` is emitted
+ * verbatim so it lands on the properties upstream's stylesheet actually reads.
  */
-export function applyThemeStyles(theme: ThemeDefinition): Promise<void> {
-  if (!theme.loadStyles) return Promise.resolve();
-  return Promise.resolve()
-    .then(theme.loadStyles)
-    .then(
-      () => undefined,
-      (error: unknown) => {
-        reportThemeFailure(`stylesheet failed to load for "${theme.id}"`, error);
-      },
-    );
+function flattenTokens(tokens: ThemeTokens): [string, string][] {
+  const out: [string, string][] = [];
+  const push = (prefix: string, map: TokenMap | undefined) => {
+    for (const [key, value] of Object.entries(map ?? {})) out.push([`${prefix}${key}`, value]);
+  };
+  push('--wm-color-', tokens.color);
+  push('--wm-font-', tokens.font);
+  push('--wm-space-', tokens.space);
+  push('--wm-radius-', tokens.radius);
+  push('--wm-', tokens.extra);
+  push('--', tokens.upstream);
+  return out;
 }
 
-export function readStoredTheme(): ThemeId | null {
+export function readStoredTheme(): string | null {
   try {
     return localStorage.getItem(THEME_STORAGE_KEY);
   } catch {
@@ -254,7 +359,7 @@ export function readStoredTheme(): ThemeId | null {
   }
 }
 
-export function writeStoredTheme(id: ThemeId): void {
+export function writeStoredTheme(id: string): void {
   try {
     localStorage.setItem(THEME_STORAGE_KEY, id);
   } catch {
@@ -262,8 +367,11 @@ export function writeStoredTheme(id: ThemeId): void {
   }
 }
 
-function reportThemeFailure(message: string, error: unknown): void {
+function report(message: string, error: unknown): void {
   const reason = error instanceof Error ? error.message : String(error);
   // console is deliberate: an unattended kiosk has no other operator channel.
   console.warn(`[wm-themes] ${message}: ${reason}`);
 }
+
+/** The process-wide registry. Themes register into this at import time. */
+export const themes = new ThemeEngine();
