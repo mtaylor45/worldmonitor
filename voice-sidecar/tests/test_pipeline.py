@@ -36,6 +36,9 @@ class RecordingEvents:
     async def error(self, message: str) -> None:
         self.log.append(("error", message))
 
+    async def action(self, name: str, argument: str | None = None) -> None:
+        self.log.append(("action", (name, argument)))
+
     def kinds(self) -> list[str]:
         return [k for k, _ in self.log]
 
@@ -52,13 +55,29 @@ class FakeSTT:
 
 
 class FakeLLM:
-    def __init__(self, reply: str = "Market composite is 61.4.") -> None:
-        self.reply = reply
-        self.asked: list[str] = []
+    """Returns a raw model response - JSON, per the P3 contract."""
 
-    async def answer(self, question: str) -> str:
-        self.asked.append(question)
+    def __init__(self, reply: str | None = None) -> None:
+        self.reply = reply if reply is not None else json_reply(speech="Market composite is 61.4.")
+        self.asked: list[tuple[str, dict]] = []
+
+    async def answer(self, question: str, snapshot: dict) -> str:
+        self.asked.append((question, snapshot))
         return self.reply
+
+
+def json_reply(action=None, argument=None, speech="Acknowledged.") -> str:
+    import json as _json
+
+    return _json.dumps({"action": action, "argument": argument, "speech": speech})
+
+
+SNAPSHOT = {
+    "version": 1,
+    "theme": "lcars",
+    "actions": ["panel.focus", "map.focus", "theme.cycle"],
+    "panels": [{"key": "cii", "title": "Country Instability"}],
+}
 
 
 class FakeTTS:
@@ -78,7 +97,7 @@ class FakeAudio:
         self.played.append(wav)
 
 
-def build(stt=None, llm=None, tts=None, audio=None, events=None, clock=None):
+def build(stt=None, llm=None, tts=None, audio=None, events=None, clock=None, snapshot=None):
     events = events or RecordingEvents()
     parts = {
         "stt": stt or FakeSTT(),
@@ -88,7 +107,9 @@ def build(stt=None, llm=None, tts=None, audio=None, events=None, clock=None):
         "events": events,
     }
     kwargs = {"clock": clock} if clock else {}
-    return Pipeline(**parts, **kwargs), parts, events
+    pipeline = Pipeline(**parts, **kwargs)
+    pipeline.update_snapshot(SNAPSHOT if snapshot is None else snapshot)
+    return pipeline, parts, events
 
 
 class HappyPath(unittest.TestCase):
@@ -102,6 +123,8 @@ class HappyPath(unittest.TestCase):
         self.assertEqual(
             events.kinds(), ["transcript", "state", "response", "state", "state"]
         )
+        # A pure answer dispatches nothing.
+        self.assertNotIn("action", events.kinds())
         # thinking while the model runs, speaking while audio plays, then idle.
         self.assertEqual(events.values("state"), ["thinking", "speaking", "idle"])
         self.assertEqual(parts["audio"].played, [b"RIFF-fake-wav"])
@@ -138,7 +161,7 @@ class WakeOrdering(unittest.TestCase):
 class Drift(unittest.TestCase):
     def test_a_chatty_model_is_replaced_by_a_template(self) -> None:
         pipeline, parts, events = build(
-            llm=FakeLLM("I'm sorry! I couldn't find that. Would you like to retry?")
+            llm=FakeLLM(json_reply(speech="I'm sorry! I couldn't find that. Would you like to retry?"))
         )
         turn = asyncio.run(pipeline.run(b"audio"))
 
@@ -167,7 +190,7 @@ class Silence(unittest.TestCase):
 class Failure(unittest.TestCase):
     def test_a_failing_stage_reports_and_still_returns_to_idle(self) -> None:
         class Exploding:
-            async def answer(self, question: str) -> str:
+            async def answer(self, question: str, snapshot: dict) -> str:
                 raise RuntimeError("ollama unreachable")
 
         pipeline, parts, events = build(llm=Exploding())
@@ -205,7 +228,7 @@ class LatencyBudget(unittest.TestCase):
 
     def test_a_failing_stage_still_records_its_time(self) -> None:
         class Slow:
-            async def answer(self, question: str) -> str:
+            async def answer(self, question: str, snapshot: dict) -> str:
                 raise RuntimeError("timeout")
 
         ticks = iter([0.0, 0.5, 0.5, 9.0])
@@ -216,3 +239,64 @@ class LatencyBudget(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class Commands(unittest.TestCase):
+    """P3: speech to a validated action."""
+
+    def test_a_valid_command_is_dispatched(self) -> None:
+        pipeline, _, events = build(llm=FakeLLM(json_reply("panel.focus", "cii")))
+        turn = asyncio.run(pipeline.run(b"audio"))
+
+        self.assertEqual((turn.action, turn.argument), ("panel.focus", "cii"))
+        self.assertEqual(events.values("action"), [("panel.focus", "cii")])
+
+    def test_the_action_is_dispatched_before_the_audio_plays(self) -> None:
+        # The panel should move as the assistant starts speaking, not after it
+        # has finished - the delay reads as the command having been ignored.
+        pipeline, _, events = build(llm=FakeLLM(json_reply("panel.focus", "cii")))
+        asyncio.run(pipeline.run(b"audio"))
+        order = [f"{k}:{v}" if k == "state" else k for k, v in events.log]
+        self.assertLess(order.index("action"), order.index("state:speaking"))
+
+    def test_an_invented_action_is_refused_and_never_dispatched(self) -> None:
+        # The failure this whole boundary exists for.
+        pipeline, _, events = build(llm=FakeLLM(json_reply("system.reboot")))
+        turn = asyncio.run(pipeline.run(b"audio"))
+
+        self.assertIsNone(turn.action)
+        self.assertEqual(events.values("action"), [])
+        self.assertTrue(turn.refusals)
+        self.assertEqual(turn.spoken, "Unable to comply.")
+
+    def test_a_panel_not_on_the_dashboard_is_refused(self) -> None:
+        pipeline, _, events = build(llm=FakeLLM(json_reply("panel.focus", "warp-core")))
+        turn = asyncio.run(pipeline.run(b"audio"))
+
+        self.assertIsNone(turn.action)
+        self.assertEqual(events.values("action"), [])
+        self.assertEqual(turn.spoken, "That information is not available.")
+
+    def test_free_text_from_the_model_dispatches_nothing(self) -> None:
+        pipeline, _, events = build(llm=FakeLLM("Sure, focusing that panel!"))
+        turn = asyncio.run(pipeline.run(b"audio"))
+
+        self.assertIsNone(turn.action)
+        self.assertEqual(events.values("action"), [])
+
+    def test_the_snapshot_reaches_the_model(self) -> None:
+        # The LLM reads the structured snapshot, never the DOM.
+        pipeline, parts, _ = build()
+        asyncio.run(pipeline.run(b"audio"))
+        _, snapshot = parts["llm"].asked[0]
+        self.assertEqual(snapshot["theme"], "lcars")
+        self.assertIn("panel.focus", snapshot["actions"])
+
+    def test_no_snapshot_means_no_action_is_permitted(self) -> None:
+        # Before the dashboard has sent one, acting is worse than refusing.
+        pipeline, _, events = build(
+            llm=FakeLLM(json_reply("theme.cycle")), snapshot={"actions": [], "panels": []}
+        )
+        turn = asyncio.run(pipeline.run(b"audio"))
+        self.assertIsNone(turn.action)
+        self.assertEqual(events.values("action"), [])

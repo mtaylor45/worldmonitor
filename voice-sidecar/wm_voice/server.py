@@ -57,6 +57,12 @@ class Broadcast:
         log.warning("turn failed: %s", message)
         await self._send(protocol.error(message))
 
+    async def action(self, name: str, argument: str | None = None) -> None:
+        # Logged at info: on a wall panel the action log is the only record of
+        # what the assistant was asked to do and what it decided.
+        log.info("action %s%s", name, " " + argument if argument else "")
+        await self._send(protocol.action(name, argument))
+
 
 class Sidecar:
     """Owns the pipeline, the microphone loop, and the socket server."""
@@ -90,6 +96,13 @@ class Sidecar:
             await self.start_turn(capture_seconds=6.0)
         elif kind == "cancel":
             await self.cancel()
+        elif kind == "context":
+            snapshot = message.get("snapshot")
+            if isinstance(snapshot, dict):
+                # Last writer wins. Several dashboards may be connected - the
+                # wall panel plus a laptop - but they render the same state, so
+                # whichever published most recently is as good as any.
+                self._pipeline.update_snapshot(snapshot)
 
     async def start_turn(self, *, capture_seconds: float) -> None:
         """Records, then runs one turn.

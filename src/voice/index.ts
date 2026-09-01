@@ -14,7 +14,7 @@
  */
 
 import { VoiceClient } from './client';
-import { VOICE_STATES, type VoiceState } from './protocol';
+import { VOICE_STATES, type DashboardSnapshot, type VoiceState } from './protocol';
 
 export { VoiceClient } from './client';
 export * from './protocol';
@@ -35,6 +35,8 @@ export interface VoicePort {
   /** Returns false when there is no sidecar — the caller plays the refusal tone. */
   ptt(): boolean;
   readonly connected: boolean;
+  /** Publishes a dashboard snapshot. Returns false when nothing is listening. */
+  sendContext(snapshot: DashboardSnapshot): boolean;
 }
 
 export interface BootVoiceOptions {
@@ -54,6 +56,13 @@ export interface BootVoiceOptions {
   socketFactory?: (url: string) => WebSocket;
   setTimeoutFn?: (fn: () => void, ms: number) => number;
   clearTimeoutFn?: (handle: number) => void;
+  /**
+   * Performs an action the sidecar asked for. Returns false if it was refused.
+   *
+   * Injected rather than imported so the voice layer does not depend on the
+   * theme layer's registry: `src/boot.ts` supplies the real router.
+   */
+  performAction?: (action: string, argument?: string) => boolean;
 }
 
 /**
@@ -121,6 +130,19 @@ export function bootVoice(options: BootVoiceOptions = {}): VoicePort {
     // take a second.
     onWake: () => play('wake'),
 
+    // The second half of P3's deterministic boundary. The sidecar has already
+    // checked this action against the registry; the dashboard checks it AGAIN
+    // before anything happens, because the thing being validated is a language
+    // model's output and one validation is a single point of trust.
+    //
+    // A refused action is audible: on a wall panel a command that silently
+    // does nothing is indistinguishable from a broken assistant.
+    onAction: (action, argument) => {
+      const performed = options.performAction?.(action, argument) ?? false;
+      play(performed ? 'accept' : 'deny');
+      if (!performed) report(`refused action from sidecar: ${action}`);
+    },
+
     onTranscript: (text, final) => {
       clearTimeout(clearTranscript);
       setTranscript(doc, text);
@@ -159,6 +181,7 @@ export function bootVoice(options: BootVoiceOptions = {}): VoicePort {
 function portFor(client: VoiceClient): VoicePort {
   return {
     ptt: () => client.ptt(true),
+    sendContext: (snapshot) => client.sendContext(snapshot),
     get connected() {
       return client.connected;
     },

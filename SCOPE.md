@@ -2,8 +2,8 @@
 
 **Working name:** LCARS World Monitor
 **Base:** fork of [koala73/worldmonitor](https://github.com/koala73/worldmonitor) (AGPL-3.0)
-**Status:** P0 and P1 complete and verified. P2 built; three acceptance
-criteria are hardware measurements and remain open.
+**Status:** P0 and P1 complete and verified. P2 and P3 built; the remaining
+acceptance criteria are hardware measurements.
 
 ---
 
@@ -217,7 +217,7 @@ Measure on CPU before making a GPU decision.
 
 ---
 
-### P3 — Commands
+### P3 — Commands `BUILT, PENDING HARDWARE`
 
 **Deliverables**
 
@@ -391,7 +391,7 @@ Helvetica LT Std swap is one line.
 
 **Voice assets.** No cloned voices — see `docs/VOICE-CHARACTER.md`. Kokoro 82M
 (Apache-2.0) default, Piper (MIT) fallback, faster-whisper `small.en` int8
-(MIT), openWakeWord (Apache-2.0), Ollama 3–7B tool-calling.
+(MIT), openWakeWord (Apache-2.0), Ollama 2–4B (Gemma 3n E2B).
 
 ---
 

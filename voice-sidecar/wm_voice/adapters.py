@@ -15,28 +15,8 @@ import asyncio
 import json
 import urllib.request
 
+from .commands import RESPONSE_SCHEMA, SYSTEM_PROMPT, build_prompt
 from .config import Config
-from .phrasing import TEMPLATES
-
-# The register is enforced after generation by the phrasing layer, but asking
-# for it up front means fewer rejected candidates and fewer retries inside the
-# three-second budget.
-SYSTEM_PROMPT = """You are the computer of a starship, answering about a \
-situational-awareness dashboard.
-
-Rules, without exception:
-- One or two sentences. Never three.
-- No contractions.
-- Never begin a sentence with "I". You have no first person.
-- No pleasantries, apologies, hedging, or offers of further help.
-- State numbers with their units.
-- Never ask a question unless the request was genuinely ambiguous, and then say \
-exactly "Please specify."
-
-Answer only from the dashboard context provided. If the answer is not in it, \
-say exactly: "That information is not available."
-"""
-
 
 class WhisperSTT:
     """faster-whisper. `small.en` int8 per SCOPE.md §7.3."""
@@ -61,32 +41,40 @@ class WhisperSTT:
 
 
 class OllamaLLM:
-    """Ollama chat completion over HTTP.
+    """Ollama chat completion over HTTP, with constrained JSON decoding.
 
     Uses urllib rather than a client library: one POST to localhost does not
     justify a dependency on a kiosk image that has to stay small.
+
+    `format` carries the response schema, so the model is constrained to emit a
+    well-formed object rather than asked nicely to. That is what makes this
+    work on a model with no native tool calling - see `commands.py` for why
+    that is the deliberate design rather than a workaround.
     """
 
-    def __init__(self, config: Config, context: object | None = None) -> None:
+    def __init__(self, config: Config) -> None:
         self._url = config.ollama_url.rstrip("/") + "/api/chat"
         self._model = config.ollama_model
-        # P3 replaces this with the real structured snapshot. The LLM reads
-        # that, never the DOM - scraping rendered markup would couple the voice
-        # layer to upstream's HTML and break on every merge.
-        self._context = context
 
-    async def answer(self, question: str) -> str:
+    async def answer(self, question: str, snapshot: dict[str, object]) -> str:
         payload = {
             "model": self._model,
             "stream": False,
+            "format": RESPONSE_SCHEMA,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "system", "content": "Dashboard context: " + json.dumps(self._context)},
+                {"role": "system", "content": build_prompt(snapshot)},
                 {"role": "user", "content": question},
             ],
-            # Low temperature: the register is a constraint, not a style choice,
-            # and a creative model is one that drifts out of it faster.
-            "options": {"temperature": 0.2, "num_predict": 80},
+            "options": {
+                # Low temperature: the register and the action list are
+                # constraints, not style choices, and a creative model is one
+                # that drifts out of them faster.
+                "temperature": 0.2,
+                # Two sentences plus a small JSON envelope. Capping this is
+                # also the cheapest latency control there is on a CPU.
+                "num_predict": 120,
+            },
         }
 
         def _run() -> str:
@@ -103,7 +91,9 @@ class OllamaLLM:
             return await asyncio.to_thread(_run)
         except Exception:
             # A dead model server is a failed turn, not a crashed sidecar.
-            return TEMPLATES["unavailable"]
+            # Returning empty text makes `interpret` refuse, which speaks the
+            # unavailable template - the honest answer.
+            return ""
 
 
 class KokoroTTS:

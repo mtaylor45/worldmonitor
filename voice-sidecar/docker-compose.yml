@@ -15,7 +15,7 @@ services:
       - wm-voice-models:/models
     environment:
       WM_OLLAMA_URL: http://127.0.0.1:11434
-      WM_OLLAMA_MODEL: qwen2.5:7b-instruct
+      WM_OLLAMA_MODEL: gemma3n:e2b
       WM_STT_MODEL: small.en
       WM_TTS_VOICE: af_sarah
     restart: unless-stopped

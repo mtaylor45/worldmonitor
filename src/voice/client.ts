@@ -17,6 +17,7 @@ import {
   PROTOCOL_VERSION,
   parseServerMessage,
   type ClientMessage,
+  type DashboardSnapshot,
   type VoiceState,
 } from './protocol';
 
@@ -27,6 +28,8 @@ export interface VoiceClientHandlers {
   onTranscript?(text: string, final: boolean): void;
   onResponse?(text: string): void;
   onError?(message: string): void;
+  /** The sidecar asks for an action. Validate before performing it. */
+  onAction?(action: string, argument: string | undefined): void;
   onConnectionChange?(connected: boolean): void;
 }
 
@@ -139,6 +142,11 @@ export class VoiceClient {
     return this.send({ type: 'cancel' });
   }
 
+  /** Publishes the dashboard snapshot the model reasons over. */
+  sendContext(snapshot: DashboardSnapshot): boolean {
+    return this.send({ type: 'context', snapshot });
+  }
+
   private send(message: ClientMessage): boolean {
     if (!this.connected || !this.socket) return false;
     try {
@@ -166,6 +174,9 @@ export class VoiceClient {
         break;
       case 'error':
         this.options.onError?.(message.message);
+        break;
+      case 'action':
+        this.options.onAction?.(message.action, message.argument);
         break;
     }
   }

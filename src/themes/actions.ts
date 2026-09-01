@@ -167,6 +167,8 @@ export function parseAction(raw: string): { action: string; argument?: string } 
 
 export interface ActionRouter {
   handle(raw: string, payload?: unknown): boolean;
+  /** Every action name, for the P3 context snapshot. Generated, never listed. */
+  actionNames(): string[];
   /** Ollama tool definitions, generated — never hand-maintained. See P3. */
   toolSchema(): {
     name: string;
@@ -220,6 +222,7 @@ export function installActions(
 
   return {
     handle,
+    actionNames: () => actions.map((a) => a.action),
     toolSchema: () =>
       actions.map((a) => {
         const properties: Record<

@@ -47,7 +47,7 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | `WM_WAKE_THRESHOLD` | `0.5` | Tune against the 24-hour false-wake test |
 | `WM_STT_MODEL` | `small.en` | `small.en` over `base.en`: the accuracy gain on place names is worth the latency, and place names are most of what gets asked |
 | `WM_STT_COMPUTE` | `int8` | |
-| `WM_OLLAMA_MODEL` | `qwen2.5:7b-instruct` | Must support tool calling for P3 |
+| `WM_OLLAMA_MODEL` | `gemma3n:e2b` | Tool calling **not** required — see below |
 | `WM_TTS_ENGINE` | `kokoro` | Piper if CPU latency disappoints |
 | `WM_TTS_VOICE` | `af_sarah` | Audition on the panel, not in headphones |
 | `WM_SIGNAL_CHAIN` | `1` | `0` to hear a raw voice against a processed one |
@@ -57,12 +57,62 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | File | Contents |
 |---|---|
 | `phrasing.py` | The register: validator, templates, numerals. **Layer 1** |
+| `commands.py` | P3's boundary: the JSON contract, the prompt, and the validator |
 | `pipeline.py` | Turn orchestration and the latency budget |
 | `protocol.py` | Wire protocol, mirrored in `src/voice/protocol.ts` |
 | `server.py` | WebSocket fan-out, push-to-talk, turn guard |
 | `adapters.py` | openWakeWord / faster-whisper / Ollama / Kokoro / PipeWire |
 | `signal_chain.py` | Post-TTS ffmpeg chain. **Layer 4** |
 | `config.py` | Environment configuration |
+
+## Commands, and why not tool calling
+
+P3 turns speech into a validated action:
+
+```text
+user speech -> model -> JSON -> validated action -> wm:action -> dashboard
+```
+
+The model emits a JSON object naming an action; `commands.py` checks it against
+the registry and the panel list and refuses anything it cannot verify; the
+dashboard checks it **again** before dispatching. Two independent validations,
+because the thing being validated is a language model's output.
+
+Ollama's tool-calling API is deliberately unused, for two reasons.
+
+The practical one: tool-calling models start around 7B, and on the NUC's
+i7-6770HQ a 7B at roughly 3–5 tok/s spends four to seven seconds on a
+twenty-token reply — over the three-second budget before anything else has run.
+Gemma 3n E2B is several times faster, and has no native tool calling.
+
+The architectural one, which matters more: tool calling hands the model a
+mechanism that *looks* like it performs actions. What is wanted is a model that
+describes an intention, checked against a registry it cannot influence. A JSON
+contract plus a validator is that boundary stated plainly, and it works on any
+model rather than a shortlist.
+
+Constrained decoding (`format` given `RESPONSE_SCHEMA`) makes the shape
+reliable. The validator assumes it can still be violated, because one that
+trusts its input is not a validator.
+
+If command interpretation disappoints, try **E4B** before reaching for a 7B.
+Latency headroom is what makes the assistant feel responsive, and a larger
+model spends it first.
+
+## Measuring latency on hardware
+
+```bash
+cd voice-sidecar && python3 bench_latency.py --runs 20
+```
+
+Runs the real LLM and TTS against scripted transcripts and reports median, p95,
+worst and per-stage medians, exiting non-zero if any turn misses the budget —
+so it can gate a deploy rather than merely inform one. Recognition is scripted
+out: it varies with utterance length rather than with anything the harness
+changes, and folding it in would hide the stage that actually moves.
+
+Expect the LLM stage to dominate. If it does not, that finding is more
+interesting than the total.
 
 ## Tests
 

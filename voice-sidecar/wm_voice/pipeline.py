@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Protocol
 
+from .commands import Command, interpret
 from .phrasing import TEMPLATES, enforce, speakable
 
 # SCOPE.md §5 P2. Measured from end-of-speech to the first audio sample.
@@ -30,7 +31,7 @@ class SpeechToText(Protocol):
 
 
 class LanguageModel(Protocol):
-    async def answer(self, question: str) -> str: ...
+    async def answer(self, question: str, snapshot: dict[str, object]) -> str: ...
 
 
 class TextToSpeech(Protocol):
@@ -49,6 +50,7 @@ class Events(Protocol):
     async def transcript(self, text: str, final: bool) -> None: ...
     async def response(self, text: str) -> None: ...
     async def error(self, message: str) -> None: ...
+    async def action(self, name: str, argument: str | None = None) -> None: ...
 
 
 @dataclass
@@ -60,6 +62,11 @@ class Turn:
     ok: bool = False
     drift: list[str] = field(default_factory=list)
     timings: dict[str, float] = field(default_factory=dict)
+    #: The action dispatched, if any. P3.
+    action: str | None = None
+    argument: str | None = None
+    #: Why an action the model asked for was refused.
+    refusals: list[str] = field(default_factory=list)
 
     @property
     def total_s(self) -> float:
@@ -90,6 +97,15 @@ class Pipeline:
         self._audio = audio
         self._events = events
         self._clock = clock
+        #: Latest dashboard snapshot. Empty until the dashboard sends one,
+        #: which means the model may request no actions at all until then -
+        #: deliberately, since acting on a dashboard it has never seen is
+        #: worse than refusing.
+        self._snapshot: dict[str, object] = {}
+
+    def update_snapshot(self, snapshot: dict[str, object]) -> None:
+        """Replaces the dashboard context the model reasons over."""
+        self._snapshot = snapshot
 
     async def on_wake(self, confidence: float | None = None) -> None:
         """Wake word fired.
@@ -123,16 +139,31 @@ class Pipeline:
             await self._events.state("thinking")
 
             async with _stage(turn, "llm", self._clock):
-                candidate = await self._llm.answer(turn.transcript)
+                candidate = await self._llm.answer(turn.transcript, self._snapshot)
+
+            # The deterministic boundary. The model produces JSON naming an
+            # action; `interpret` checks it against the registry and the panel
+            # list, and refuses anything it cannot verify. Nothing downstream
+            # sees the model's raw output.
+            command: Command = interpret(candidate, self._snapshot)
+            turn.action = command.action
+            turn.argument = command.argument
+            turn.refusals = command.refusals
 
             # The phrasing layer sits between the model and the speaker, always.
             # A model drifts back toward chattiness over a long session, and the
             # register is most of what makes this read as the ship's computer.
-            turn.spoken, verdict = enforce(candidate)
+            turn.spoken, verdict = enforce(command.speech)
             turn.ok = verdict.ok
             turn.drift = verdict.reasons
 
             await self._events.response(turn.spoken)
+
+            # Dispatched BEFORE the audio plays. The panel should move as the
+            # assistant starts speaking, not after it has finished - the delay
+            # would read as the command having been ignored.
+            if command.performs and command.action:
+                await self._events.action(command.action, command.argument)
 
             async with _stage(turn, "tts", self._clock):
                 wav = await self._tts.synthesize(speakable(turn.spoken))

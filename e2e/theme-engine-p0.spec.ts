@@ -632,6 +632,89 @@ test.describe('P2 — voice layer', () => {
   });
 });
 
+test.describe('P3 — voice commands', () => {
+  test('builds a structured snapshot with no markup in it', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const snapshot = await page.evaluate(async () => {
+      const { buildSnapshot } = await import('/src/context/index.ts');
+      const { getActionRouter } = await import('/src/themes/index.ts');
+      return buildSnapshot({ actions: getActionRouter()?.actionNames() ?? [] });
+    });
+
+    // SCOPE.md §3: the LLM reads this, never the DOM. Upstream can restyle
+    // freely without the voice layer noticing.
+    expect(JSON.stringify(snapshot)).not.toContain('<');
+    expect(snapshot.panels.length).toBeGreaterThan(0);
+    expect(snapshot.panels.length).toBeLessThanOrEqual(12);
+    expect(snapshot.actions).toContain('panel.focus');
+    expect(snapshot.theme).toBe('lcars');
+
+    // Every key in the snapshot is a panel the dashboard actually renders —
+    // otherwise the model would be offered a target that silently does nothing.
+    const rendered = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-panel]')].map((el) =>
+        el.getAttribute('data-panel'),
+      ),
+    );
+    for (const panel of snapshot.panels) expect(rendered).toContain(panel.key);
+  });
+
+  test('the registry refuses an action it does not know', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // The dashboard's half of the deterministic boundary. Even if the sidecar
+    // accepted it, an invented action performs nothing here.
+    const results = await page.evaluate(async () => {
+      const { getActionRouter } = await import('/src/themes/index.ts');
+      const router = getActionRouter();
+      return {
+        real: router?.handle('panel.focus', 'cii') ?? null,
+        invented: router?.handle('system.reboot') ?? null,
+        unknownPanel: router?.handle('panel.focus', 'warp-core') ?? null,
+      };
+    });
+
+    expect(results.real).toBe(true);
+    expect(results.invented).toBe(false);
+    expect(results.unknownPanel).toBe(false);
+  });
+
+  test('a voice-dispatched action moves the dashboard exactly as the rail does', async ({
+    page,
+  }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // P3's acceptance criterion, from the other direction: the action the
+    // voice layer dispatches is the same one the button dispatches, through
+    // the same registry, with the same effect.
+    await page.evaluate(async () => {
+      const { getActionRouter } = await import('/src/themes/index.ts');
+      getActionRouter()?.handle('panel.focus', 'cii');
+    });
+
+    await expect(page.locator('[data-panel="cii"][data-wm-focus="true"]')).toHaveCount(1);
+  });
+
+  test('every action name in the snapshot is one the registry will accept', async ({
+    page,
+  }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // The model is told what it may ask for; if that list and the registry
+    // disagree, the assistant refuses commands it was explicitly offered.
+    const mismatch = await page.evaluate(async () => {
+      const { getActionRouter } = await import('/src/themes/index.ts');
+      const router = getActionRouter();
+      const names = router?.actionNames() ?? [];
+      const schema = (router?.toolSchema() ?? []).map((t) => t.name.replace('_', '.'));
+      return names.filter((n) => !schema.includes(n));
+    });
+
+    expect(mismatch).toEqual([]);
+  });
+});
+
 test.describe('P0 — kiosk geometry', () => {
   test('neither theme overflows the 1280x720 panel horizontally', async ({ page }) => {
     for (const theme of ['default', 'lcars', 'lcars-bright']) {

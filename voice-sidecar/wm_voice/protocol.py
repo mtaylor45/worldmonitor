@@ -20,11 +20,23 @@ from typing import Any, Literal
 # showing nothing reads as a hang.
 VOICE_STATES: tuple[str, ...] = ("idle", "listening", "thinking", "speaking")
 
-SERVER_MESSAGES: tuple[str, ...] = ("state", "wake", "transcript", "response", "error")
-CLIENT_MESSAGES: tuple[str, ...] = ("hello", "ptt", "cancel")
+SERVER_MESSAGES: tuple[str, ...] = (
+    "state",
+    "wake",
+    "transcript",
+    "response",
+    "error",
+    "action",
+)
+CLIENT_MESSAGES: tuple[str, ...] = ("hello", "ptt", "cancel", "context")
 
 # Bumped when a message changes shape, never for additions.
 PROTOCOL_VERSION = 1
+
+# Dashboard snapshot schema. Bumped when a field changes meaning, not when one
+# is added - P3 reads a snapshot produced by a dashboard that may be a version
+# behind after an update.
+SNAPSHOT_VERSION = 1
 
 VoiceState = Literal["idle", "listening", "thinking", "speaking"]
 
@@ -64,6 +76,19 @@ def error(message: str) -> str:
     return json.dumps({"type": "error", "message": message})
 
 
+def action(name: str, argument: str | None = None) -> str:
+    """Frame: an action the dashboard should perform.
+
+    The deterministic boundary. The model never touches application state - it
+    produces a name and an argument, this sidecar checks both against the
+    registry, and the dashboard checks them AGAIN before dispatching.
+    """
+    payload: dict[str, Any] = {"type": "action", "action": name}
+    if argument is not None:
+        payload["argument"] = argument
+    return json.dumps(payload)
+
+
 def parse_client_message(raw: str) -> dict[str, Any] | None:
     """Narrows an untrusted frame from the dashboard.
 
@@ -81,5 +106,7 @@ def parse_client_message(raw: str) -> dict[str, Any] | None:
     if kind not in CLIENT_MESSAGES:
         return None
     if kind == "ptt" and not isinstance(value.get("pressed"), bool):
+        return None
+    if kind == "context" and not isinstance(value.get("snapshot"), dict):
         return None
     return value

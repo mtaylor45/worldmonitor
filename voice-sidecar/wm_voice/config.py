@@ -38,7 +38,15 @@ class Config:
     stt_compute: str = _env("WM_STT_COMPUTE", "int8")
 
     ollama_url: str = _env("WM_OLLAMA_URL", "http://127.0.0.1:11434")
-    ollama_model: str = _env("WM_OLLAMA_MODEL", "qwen2.5:7b-instruct")
+    # Gemma 3n E2B. Chosen for latency, not capability: on a 4-core Skylake a
+    # 7B at roughly 3-5 tok/s spends four to seven seconds on a twenty-token
+    # reply, which fails the three-second budget before the pipeline has done
+    # anything else. An E2B-class model is several times faster.
+    #
+    # It has no native tool calling, and does not need any: P3 constrains the
+    # response with a JSON schema and validates it against the registry. See
+    # commands.py for why that is the design rather than a workaround.
+    ollama_model: str = _env("WM_OLLAMA_MODEL", "gemma3n:e2b")
 
     # Kokoro first, Piper if CPU latency disappoints (docs/VOICE-CHARACTER.md).
     tts_engine: str = _env("WM_TTS_ENGINE", "kokoro")

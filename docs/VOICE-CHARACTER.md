@@ -173,8 +173,7 @@ playback can start on the first sentence.
 STT is faster-whisper `small.en` int8 (MIT); `small.en` over `base.en` because
 the accuracy gain on place names is worth the latency on a 4-core Skylake. Wake
 word is openWakeWord (Apache-2.0) with a custom "Computer" model. The LLM is
-Ollama, 3–7B class, tool-calling capable — tool calling is a hard requirement,
-because P3 derives its schema from the action registry.
+Ollama, 2–4B class. **Tool calling is not required** — see below.
 
 ### Audition protocol
 

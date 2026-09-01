@@ -68,12 +68,57 @@ class Fanout(unittest.TestCase):
         self.assertEqual(socket.sent, [])
 
 
+class ContextIntake(unittest.TestCase):
+    def test_a_context_frame_updates_the_pipeline_snapshot(self) -> None:
+        # The LLM reads this snapshot and never the DOM.
+        seen: list[dict] = []
+
+        class Recording:
+            def update_snapshot(self, snapshot: dict) -> None:
+                seen.append(snapshot)
+
+        sidecar = Sidecar(Recording(), Broadcast())  # type: ignore[arg-type]
+        snapshot = {"version": 1, "theme": "lcars", "actions": [], "panels": []}
+        asyncio.run(sidecar._on_message({"type": "context", "snapshot": snapshot}))
+        self.assertEqual(seen, [snapshot])
+
+    def test_a_context_frame_without_a_snapshot_is_ignored(self) -> None:
+        class Recording:
+            def update_snapshot(self, snapshot: dict) -> None:
+                raise AssertionError("should not be called")
+
+        sidecar = Sidecar(Recording(), Broadcast())  # type: ignore[arg-type]
+        asyncio.run(sidecar._on_message({"type": "context", "snapshot": "nope"}))
+
+
+class ActionFanout(unittest.TestCase):
+    def test_an_action_reaches_every_dashboard(self) -> None:
+        events = Broadcast()
+        socket = FakeSocket()
+        events.add(socket)
+        asyncio.run(events.action("panel.focus", "cii"))
+        self.assertEqual(
+            json.loads(socket.sent[0]),
+            {"type": "action", "action": "panel.focus", "argument": "cii"},
+        )
+
+    def test_an_action_without_an_argument_omits_the_field(self) -> None:
+        events = Broadcast()
+        socket = FakeSocket()
+        events.add(socket)
+        asyncio.run(events.action("theme.cycle"))
+        self.assertEqual(json.loads(socket.sent[0]), {"type": "action", "action": "theme.cycle"})
+
+
 class TurnGuard(unittest.TestCase):
     def build(self) -> tuple[Sidecar, list[str], Broadcast]:
         started: list[str] = []
         events = Broadcast()
 
         class SlowPipeline:
+            def update_snapshot(self, snapshot: dict) -> None:
+                self.snapshot = snapshot
+
             async def run(self, audio: bytes) -> object:
                 started.append("run")
                 await asyncio.sleep(0.05)

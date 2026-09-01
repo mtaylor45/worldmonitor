@@ -24,11 +24,18 @@ export const VOICE_STATES = ['idle', 'listening', 'thinking', 'speaking'] as con
 export type VoiceState = (typeof VOICE_STATES)[number];
 
 /** Messages the sidecar sends to the dashboard. */
-export const SERVER_MESSAGES = ['state', 'wake', 'transcript', 'response', 'error'] as const;
+export const SERVER_MESSAGES = [
+  'state',
+  'wake',
+  'transcript',
+  'response',
+  'error',
+  'action',
+] as const;
 export type ServerMessageType = (typeof SERVER_MESSAGES)[number];
 
 /** Messages the dashboard sends to the sidecar. */
-export const CLIENT_MESSAGES = ['hello', 'ptt', 'cancel'] as const;
+export const CLIENT_MESSAGES = ['hello', 'ptt', 'cancel', 'context'] as const;
 export type ClientMessageType = (typeof CLIENT_MESSAGES)[number];
 
 /** Protocol version. Bumped when a message changes shape, never for additions. */
@@ -71,12 +78,32 @@ export interface ErrorMessage {
   message: string;
 }
 
+/**
+ * An action the assistant wants performed.
+ *
+ * This is the deterministic boundary P3 exists to create. The model never
+ * touches application state; it produces a name and an argument, the sidecar
+ * checks them against the registry, and the dashboard checks them AGAIN before
+ * dispatching. Two independent validations of the same claim, because the
+ * thing being validated is a language model's output.
+ *
+ * `argument` is a plain string rather than an arbitrary payload on purpose:
+ * every action in the registry takes at most one, and a shape the model can
+ * fill freely is a shape it will eventually fill with something unexpected.
+ */
+export interface ActionMessage {
+  type: 'action';
+  action: string;
+  argument?: string;
+}
+
 export type ServerMessage =
   | StateMessage
   | WakeMessage
   | TranscriptMessage
   | ResponseMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | ActionMessage;
 
 export interface HelloMessage {
   type: 'hello';
@@ -95,7 +122,41 @@ export interface CancelMessage {
   type: 'cancel';
 }
 
-export type ClientMessage = HelloMessage | PttMessage | CancelMessage;
+/**
+ * The dashboard's structured state, for the model to reason over.
+ *
+ * SCOPE.md §3: the LLM reads this, never the DOM. Scraping rendered markup
+ * would couple the voice layer to upstream's HTML and break on every merge —
+ * and would feed a model a page of chrome to find two numbers in.
+ */
+export interface ContextMessage {
+  type: 'context';
+  snapshot: DashboardSnapshot;
+}
+
+/** One panel, as the model sees it. */
+export interface PanelSnapshot {
+  /** `data-panel` key — also the argument `panel.focus` takes. */
+  key: string;
+  title: string;
+  /** Headline readings, already flattened out of the panel's markup. */
+  readings?: Record<string, string>;
+}
+
+export interface DashboardSnapshot {
+  /** Schema version. Bumped when a field changes meaning, not when one is added. */
+  version: number;
+  theme: string;
+  panels: PanelSnapshot[];
+  /** Action names the model may return. Generated from the registry. */
+  actions: string[];
+  alert?: boolean;
+}
+
+export type ClientMessage = HelloMessage | PttMessage | CancelMessage | ContextMessage;
+
+/** Snapshot schema version. See `src/context/`. */
+export const SNAPSHOT_VERSION = 1;
 
 export function isVoiceState(value: unknown): value is VoiceState {
   return typeof value === 'string' && (VOICE_STATES as readonly string[]).includes(value);
@@ -135,6 +196,16 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     case 'error':
       return typeof message.message === 'string'
         ? { type: 'error', message: message.message }
+        : null;
+    case 'action':
+      // Shape only. Whether the action EXISTS is the registry's call, made at
+      // dispatch time — this layer must not carry a second copy of the list.
+      return typeof message.action === 'string' && message.action
+        ? {
+            type: 'action',
+            action: message.action,
+            ...(typeof message.argument === 'string' ? { argument: message.argument } : {}),
+          }
         : null;
     default:
       return null;

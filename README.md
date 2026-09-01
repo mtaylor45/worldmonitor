@@ -42,7 +42,7 @@ The whole project follows from one idea:
 | Kiosk deployment configuration | 🟡 Written / hardware verification pending |
 | Palette choice | 🟡 Awaiting the physical panel |
 | Local voice assistant | 🟡 Built / hardware verification pending |
-| Voice commands | ⚪ Planned |
+| Voice commands | 🟡 Built / hardware verification pending |
 | Proactive alerts | ⚪ Planned |
 | Home-lab telemetry | ⚪ Planned |
 
@@ -344,7 +344,8 @@ worldmonitor/
 │   │   ├── client.ts        WebSocket client, reconnect, degradation
 │   │   └── index.ts         indicator, transcript, chirp wiring
 │   │
-│   └── context/             structured dashboard context       (P3)
+│   └── context/
+│       └── snapshot.ts      structured dashboard state for the model
 │
 ├── public/
 │   ├── fonts/               self-hosted Antonio + OFL
@@ -362,7 +363,8 @@ worldmonitor/
 │   │   ├── phrasing.py      the register: validator, templates, numerals
 │   │   ├── pipeline.py      turn orchestration and the latency budget
 │   │   ├── protocol.py      wire protocol, mirrored in src/voice/
-│   │   ├── server.py        WebSocket fan-out, push-to-talk
+│   │   ├── commands.py      the P3 boundary: JSON contract and validator
+│   │   ├── server.py        WebSocket fan-out, push-to-talk, context
 │   │   ├── adapters.py      wake / STT / LLM / TTS / audio
 │   │   └── signal_chain.py  post-TTS ffmpeg chain
 │   └── tests/
@@ -380,7 +382,7 @@ worldmonitor/
 └── SCOPE.md
 ```
 
-`src/context/` represents planned P3 architecture and is not yet populated.
+Every directory above is populated. What remains is hardware verification.
 
 ---
 
@@ -555,7 +557,7 @@ button drives real push-to-talk, and refuses audibly when no sidecar answers.
 assistant's own TTS playback (the AEC test), and no false wake in 24 hours of
 room noise. See `voice-sidecar/README.md`.
 
-### P3 — Voice commands · planned
+### P3 — Voice commands · built, pending hardware
 
 Turns the assistant into an actual control interface. Commands map onto the same
 action registry the graphical interface uses:
@@ -571,7 +573,21 @@ User speech → LLM → Validated action → wm:action → Application
 ```
 
 That is a deterministic boundary between natural-language interpretation and
-application control.
+application control — and it is validated **twice**: the sidecar checks the
+model's JSON against the registry and the panel list, then the dashboard checks
+it again before dispatching. One validation is a single point of trust in a
+language model's output.
+
+`src/context/` builds the structured snapshot the model reasons over. It reads
+the DOM, but that coupling is confined to one versioned file; the model never
+sees markup.
+
+**Tool calling is deliberately not used.** Tool-calling models in Ollama start
+around 7B, and on this CPU a 7B blows the three-second budget on its own. The
+recommendation is **Gemma 3n E2B**, which has no native tool calling and does
+not need any: the response is constrained by a JSON schema and validated
+against the registry. That is the same boundary, stated plainly, and it works
+on any model. See `docs/VOICE-CHARACTER.md`.
 
 ### P4 — Future features
 

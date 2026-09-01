@@ -11,7 +11,8 @@
  * keeps it that way as more subsystems arrive (P3 adds `src/context/`).
  */
 
-import { bootThemes } from './themes';
+import { bootThemes, getActionRouter } from './themes';
+import { startContextPublisher } from './context';
 import { bootVoice } from './voice';
 
 let booted = false;
@@ -33,8 +34,30 @@ export function bootApp(): Promise<void> {
   try {
     // Voice first, so the port exists before the action registry is built and
     // `voice.ptt` can reach a real client rather than a stub.
-    const voice = bootVoice({ playSound: (slot) => playThemeSound(slot) });
-    return bootThemes({ voice });
+    const voice = bootVoice({
+      playSound: (slot) => playThemeSound(slot),
+
+      // P3's second validation. The router is the SAME registry the rail
+      // dispatches through, so an action the sidecar asks for goes through
+      // exactly the checks a button press does - and one the registry does not
+      // know is refused here even though the sidecar already accepted it.
+      //
+      // Resolved lazily: the router does not exist until bootThemes() below.
+      performAction: (action, argument) =>
+        getActionRouter()?.handle(action, argument) ?? false,
+    });
+
+    const themes = bootThemes({ voice });
+
+    // The model reads this snapshot and never the DOM (SCOPE.md §3).
+    startContextPublisher({
+      send: (snapshot) => voice.sendContext(snapshot),
+      // Read from the live registry rather than captured: the action list is
+      // generated, and a copy taken at boot would drift the moment one is added.
+      actions: () => getActionRouter()?.actionNames() ?? [],
+    });
+
+    return themes;
   } catch (error) {
     // console is deliberate: an unattended kiosk has no other operator channel.
     console.warn('[wm-boot] startup failed, dashboard continues:', error);

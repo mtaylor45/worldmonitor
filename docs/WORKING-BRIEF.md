@@ -48,6 +48,7 @@ Log every upstream file touched in `docs/UPSTREAM-DIFF.md`.
 | `voice-sidecar/` | The sidecar itself: pipeline, phrasing layer, container |
 | `src/boot.ts` | Composition root. The single upstream seam calls this |
 | `src/context/` | Panel state snapshot for the LLM (P3) |
+| `src/context/` | Panel state snapshot for the LLM (P3) |
 | `deploy/kiosk/` | `cage` + Chromium + systemd kiosk profile |
 | `preview/lcars-preview.html` | Standalone 1280x720 mock, no build step |
 | `preview/lcars-style-guide.html` | The design system, rendered. Open it when a decision needs to be *seen* |
@@ -192,6 +193,26 @@ an indicator stuck on a stale state with nothing in either log.
 
 ---
 
+**The model never touches application state.** It emits JSON naming an action;
+the sidecar validates it against the registry and the panel list, and the
+dashboard validates it **again** before dispatching. Two independent checks,
+because the thing being checked is a language model's output.
+
+**Tool calling is not used, and that is deliberate.** Tool-calling models start
+around 7B and blow the three-second budget on this CPU. Constrained JSON plus a
+validator is the same boundary, works on any model, and is more legible. See
+`voice-sidecar/wm_voice/commands.py`.
+
+**Refusal is the default on every uncertain path.** An assistant that guesses
+which panel you meant is worse than one that says "Please specify" — the guess
+is silent and wrong, and nobody watches a wall panel closely enough to catch it.
+
+**`src/context/` is the only place that reads upstream markup for the LLM.**
+The coupling is real but confined to one versioned file. When upstream changes
+its markup, one selector moves and nothing downstream notices.
+
+---
+
 ## Conventions
 
 - TypeScript strict. No `any` in our directories.
@@ -240,8 +261,8 @@ Two traps, both hit during P0:
 
 ## Current state
 
-P0 and P1 are complete and verified. P2 is built and tested; its three
-hardware acceptance criteria remain open.
+P0 and P1 are complete and verified. P2 and P3 are built and tested; the
+remaining acceptance criteria are hardware measurements.
 
 The LCARS theme is whole: self-hosted Antonio, vendored sounds wired by slot,
 rail bound to real panel keys, the 12-column grid with its container-query span
@@ -249,8 +270,9 @@ ladder, and both palettes selectable.
 
 Outstanding, and deliberately so:
 
-- **Three P2 acceptance criteria need hardware**: sub-3s latency on CPU, the
-  wake word surviving TTS playback (AEC), and no false wake in 24 hours.
+- **Acceptance criteria that need hardware**: sub-3s latency on CPU
+  (`voice-sidecar/bench_latency.py` measures it), the wake word surviving TTS
+  playback (AEC), and no false wake in 24 hours.
 - **The cap-height factor (1.36) is a token, not yet applied.** It is
   calibrated for Swiss 911, and Antonio has different vertical metrics.
 - **The kiosk profile is unverified on hardware** — the panel is unsourced.
