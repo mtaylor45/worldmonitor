@@ -30,6 +30,8 @@ export interface VoiceClientHandlers {
   onError?(message: string): void;
   /** The sidecar asks for an action. Validate before performing it. */
   onAction?(action: string, argument: string | undefined): void;
+  /** The sidecar raises or clears the alert state. Its call, not ours. */
+  onAlert?(active: boolean, region: string | undefined, score: number | undefined): void;
   onConnectionChange?(connected: boolean): void;
 }
 
@@ -177,6 +179,9 @@ export class VoiceClient {
         break;
       case 'action':
         this.options.onAction?.(message.action, message.argument);
+        break;
+      case 'alert':
+        this.options.onAlert?.(message.active, message.region, message.score);
         break;
     }
   }

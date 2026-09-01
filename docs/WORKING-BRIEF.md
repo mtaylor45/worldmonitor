@@ -48,7 +48,7 @@ Log every upstream file touched in `docs/UPSTREAM-DIFF.md`.
 | `voice-sidecar/` | The sidecar itself: audio, wake word, pipeline, phrasing, container |
 | `src/boot.ts` | Composition root. The single upstream seam calls this |
 | `src/context/` | Panel state snapshot for the LLM (P3) |
-| `src/context/` | Panel state snapshot for the LLM (P3) |
+| `src/alert/` | Proactive alert state — the `data-wm-alert` attribute and its tone (P4) |
 | `deploy/kiosk/` | `cage` + Chromium + systemd kiosk profile |
 | `preview/lcars-preview.html` | Standalone 1280x720 mock, no build step |
 | `preview/lcars-style-guide.html` | The design system, rendered. Open it when a decision needs to be *seen* |
@@ -234,6 +234,42 @@ its markup, one selector moves and nothing downstream notices.
 
 ---
 
+## Proactive alerts
+
+**The sidecar decides; the dashboard renders.** Thresholds, hysteresis, quiet
+hours and the readings all live in `voice-sidecar/wm_voice/alerts.py`. The
+dashboard receives one boolean and sets `data-wm-alert`. This is deliberately
+unlike an action, which is validated twice: an action is a language model's
+claim about what the user wanted, an alert is arithmetic on a number the
+sidecar fetched, and a second opinion in the browser would mean a copy of the
+thresholds drifting out of step with the ones that actually fire.
+
+**The failure mode is "it fires often enough that you stop looking."** Not "it
+did not fire". Four guards exist for that and nothing else — hysteresis so a
+score on the line cannot flap, a floor between *spoken* alerts so several
+regions crossing together do not queue speech, quiet hours, and a refusal to
+act on a reading the API itself reports as `degraded` or `stale`.
+
+**Quiet hours silence the voice, never the display.** The point of a quiet
+window is not waking the house, not hiding the situation. An alert raised at
+3am is still on the panel at 3am.
+
+**A stale feed clears nothing either.** Dropping a live alert because the
+upstream cache hiccuped is the failure a monitor exists to prevent, not one it
+should introduce.
+
+**No model runs on the alert path.** The wording is templated, for the same
+reason tier 0 exists: a model would cost eight to twelve seconds on this CPU to
+produce a sentence that was always going to be one of two shapes, and a model
+asked to read a number back is one that will eventually read a different one.
+The phrasing layer still runs, because it runs on every spoken line.
+
+**Clearing removes the attribute, it does not set it false.** An empty or
+false-valued attribute is still an attribute — the same lossless-teardown rule
+the chrome follows, and there is a test that cycles it twenty times.
+
+---
+
 ## Conventions
 
 - TypeScript strict. No `any` in our directories.
@@ -248,6 +284,9 @@ its markup, one selector moves and nothing downstream notices.
 ```bash
 # Engine behaviour, cycle stability, chrome re-mount
 npx vitest run --config vitest.dom.config.mts tests/dom/theme-engine.test.mts
+
+# Sidecar: phrasing, wake word, alerts, protocol contract
+cd voice-sidecar && python3 -m unittest discover -s tests -t .
 
 # Extraction still matches upstream's main.css
 npx vitest run --config vitest.dom.config.mts tests/dom/theme-token-contract.test.mts
@@ -291,6 +330,9 @@ ladder, and both palettes selectable.
 
 Outstanding, and deliberately so:
 
+- **Alert thresholds nobody has lived with yet.** `*>85` is a guess. The
+  hysteresis margin, the poll interval and the spoken-alert floor are all
+  calibrated against a week of real readings that has not happened.
 - **A trained "Computer" wake model.** The detector, the shared audio source
   and the pre-roll are built and tested; openWakeWord ships no model for this
   word, so the remaining step is a training run, not code.

@@ -12,6 +12,7 @@
  * its markup, one selector here moves; nothing downstream notices.
  */
 
+import { isAlert } from '../alert';
 import { PANEL_ATTRIBUTE, THEME_ATTRIBUTE } from '../themes/engine';
 import { SNAPSHOT_VERSION, type DashboardSnapshot, type PanelSnapshot } from '../voice/protocol';
 
@@ -150,7 +151,10 @@ export function buildSnapshot(options: SnapshotOptions = {}): DashboardSnapshot 
       snapshot.panels.push(panel);
     }
 
-    if (doc.documentElement.getAttribute('data-wm-alert') === 'true') {
+    // One definition of the attribute, in `src/alert/`. A literal here would
+    // be a second place to change when it moves, and the failure mode is a
+    // model told the panel is calm while it is flashing red.
+    if (isAlert(doc)) {
       snapshot.alert = true;
     }
   } catch (error) {

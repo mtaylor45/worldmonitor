@@ -54,6 +54,9 @@ class Events(Protocol):
     async def response(self, text: str) -> None: ...
     async def error(self, message: str) -> None: ...
     async def action(self, name: str, argument: str | None = None) -> None: ...
+    async def alert(
+        self, active: bool, region: str | None = None, score: float | None = None
+    ) -> None: ...
 
 
 @dataclass
@@ -236,6 +239,34 @@ class Pipeline:
 
         return turn
 
+
+    async def announce(self, text: str) -> Turn:
+        """Speaks something nobody asked for. Never raises.
+
+        The proactive-alert path (SCOPE.md §6 P4-1). It shares the phrasing
+        layer and the synthesis stages with a normal turn and skips everything
+        else - no recognition, no router, no model. The text arrives already
+        templated by `alerts.speech`, because an eight-to-twelve second model
+        pass to say a sentence that was always going to be one of two shapes is
+        latency spent on nothing, and a model asked to read a number back is a
+        model that will eventually read a different one.
+
+        The phrasing layer still runs. It is the one thing every spoken line
+        goes through, and an alert is exactly where the register matters most.
+        """
+        turn = Turn(tier="alert")
+        try:
+            turn.spoken, verdict = enforce(text)
+            turn.ok = verdict.ok
+            turn.drift = verdict.reasons
+            await self._events.response(turn.spoken)
+            await self._speak(turn)
+        except Exception as exc:  # noqa: BLE001 - the sidecar must not die
+            await self._events.error(str(exc) or exc.__class__.__name__)
+            turn.ok = False
+        finally:
+            await self._events.state("idle")
+        return turn
 
     async def _speak(self, turn: "Turn") -> None:
         """Synthesises and plays a turn's response. Used by the tier-0 path."""

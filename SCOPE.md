@@ -277,6 +277,15 @@ ignore. Thresholds must be user-editable.
 *The visual half of this already has its hook:
 `:root[data-wm-theme="lcars"][data-wm-alert="true"]` in `lcars.css`.*
 
+**Built.** The sidecar polls `get-risk-scores` and owns the decision entirely;
+the dashboard renders one boolean through `src/alert/`. Thresholds are
+`WM_ALERT_RULES` (levels and 24-hour rises, per region or catch-all), with
+hysteresis, a floor between spoken alerts, and quiet hours that silence the
+voice but never the display. A `degraded` or `stale` reading raises nothing and
+clears nothing. The wording is templated rather than generated — see
+`voice-sidecar/README.md`. What is left is calibration: the default `*>85` is a
+guess until a week of real readings says otherwise.
+
 **2. Scheduled spoken briefing**
 
 "Computer, morning briefing." Sixty to ninety seconds synthesizing overnight

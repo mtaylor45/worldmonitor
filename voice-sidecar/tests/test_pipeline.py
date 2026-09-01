@@ -40,6 +40,11 @@ class RecordingEvents:
     async def action(self, name: str, argument: str | None = None) -> None:
         self.log.append(("action", (name, argument)))
 
+    async def alert(
+        self, active: bool, region: str | None = None, score: float | None = None
+    ) -> None:
+        self.log.append(("alert", (active, region, score)))
+
     def kinds(self) -> list[str]:
         return [k for k, _ in self.log]
 
@@ -404,3 +409,73 @@ class DataToolLoop(unittest.TestCase):
 
         self.assertEqual(turn.spoken, TEMPLATES["unavailable"])
         self.assertTrue(any("failed" in r for r in turn.refusals))
+
+
+class Announcing(unittest.TestCase):
+    """The proactive-alert path: speech nobody asked for.
+
+    It shares the phrasing layer and the synthesis stages with a normal turn
+    and skips everything else - no recognition, no router, no model. A model
+    pass here would cost eight to twelve seconds on this CPU to produce a
+    sentence that was always going to be one of two shapes.
+    """
+
+    def build(self) -> tuple[Pipeline, RecordingEvents, "FakeTTS"]:
+        events = RecordingEvents()
+        tts = FakeTTS()
+        pipeline = Pipeline(
+            stt=_Exploding(), llm=_Exploding(), tts=tts, audio=FakeAudio(), events=events
+        )
+        return pipeline, events, tts
+
+    def test_it_speaks_without_touching_the_model_or_the_microphone(self) -> None:
+        pipeline, events, tts = self.build()
+        turn = asyncio.run(pipeline.announce("Alert. Instability index for Sudan has risen to 87."))
+
+        self.assertTrue(turn.ok)
+        self.assertEqual(turn.tier, "alert")
+        self.assertEqual(events.values("response"), [turn.spoken])
+        # Numerals become words on the way to the engine, not before.
+        self.assertIn("eighty-seven", tts.spoken[0])
+
+    def test_it_returns_the_indicator_to_idle(self) -> None:
+        # An unprompted announcement that leaves the panel reading SPEAKING is
+        # worse than one that never happened.
+        pipeline, events, _ = self.build()
+        asyncio.run(pipeline.announce("Alert. Instability index for Sudan has risen to 87."))
+        self.assertEqual(events.values("state"), ["speaking", "idle"])
+
+    def test_the_phrasing_layer_still_runs(self) -> None:
+        # The one thing every spoken line goes through. An alert is exactly
+        # where the register matters most.
+        pipeline, events, _ = self.build()
+        turn = asyncio.run(pipeline.announce("Sorry! I think Sudan might be getting worse."))
+        self.assertFalse(turn.ok)
+        self.assertNotIn("Sorry", turn.spoken)
+
+    def test_a_synthesis_failure_does_not_end_the_session(self) -> None:
+        events = RecordingEvents()
+        pipeline = Pipeline(
+            stt=_Exploding(),
+            llm=_Exploding(),
+            tts=_Exploding(),
+            audio=FakeAudio(),
+            events=events,
+        )
+        turn = asyncio.run(pipeline.announce("Alert. Instability index for Sudan has risen to 87."))
+        self.assertFalse(turn.ok)
+        self.assertEqual(events.kinds()[-1], "state")
+        self.assertEqual(events.values("state")[-1], "idle")
+
+
+class _Exploding:
+    """Anything the alert path must not call."""
+
+    async def transcribe(self, audio: bytes) -> str:
+        raise AssertionError("recognition must not run for an announcement")
+
+    async def answer(self, question: str, snapshot: dict) -> str:
+        raise AssertionError("the model must not run for an announcement")
+
+    async def synthesize(self, text: str) -> bytes:
+        raise RuntimeError("engine down")

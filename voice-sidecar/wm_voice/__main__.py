@@ -6,12 +6,16 @@ import asyncio
 import logging
 
 from .adapters import ChatLLM, KokoroTTS, PipeAudio, WhisperSTT
+from .alerts import AlertWatcher, parse_rules, parse_window
 from .audio import AudioSource
 from .config import CONFIG
 from .pipeline import Pipeline
-from .server import Broadcast, Sidecar, serve
+from .server import RISK_SCORES_PATH, Broadcast, Sidecar, serve
 from .tools import ToolRegistry, WorldMonitorApi
 from .wake import WakeWatcher, build_scorer
+
+
+log = logging.getLogger("wm_voice")
 
 
 def main() -> None:
@@ -48,7 +52,36 @@ def main() -> None:
         listen_during_playback=CONFIG.wake_during_playback,
     )
 
-    asyncio.run(serve(Sidecar(pipeline, events, CONFIG, audio=audio, wake=wake)))
+    # Proactive alerts (P4-1). The thresholds are the user's; everything that
+    # decides whether a crossing is worth interrupting someone for - hysteresis,
+    # the minimum interval, quiet hours - is in the watcher.
+    alerts = AlertWatcher(
+        parse_rules(CONFIG.alert_rules),
+        clear_margin=CONFIG.alert_clear_margin,
+        min_interval_s=CONFIG.alert_min_interval_s,
+        quiet_hours=parse_window(CONFIG.alert_quiet_hours),
+        speak=CONFIG.alert_speak,
+    )
+    if not alerts.enabled:
+        log.warning("no alert rules parsed from WM_ALERT_RULES; proactive alerts disabled")
+
+    # The same API client the data tools use. One endpoint returns every
+    # tracked region, so a poll is one request rather than one per country.
+    watch_api = WorldMonitorApi(CONFIG.api_url)
+
+    asyncio.run(
+        serve(
+            Sidecar(
+                pipeline,
+                events,
+                CONFIG,
+                audio=audio,
+                wake=wake,
+                alerts=alerts,
+                fetch_risk_scores=lambda: watch_api.get(RISK_SCORES_PATH),
+            )
+        )
+    )
 
 
 if __name__ == "__main__":

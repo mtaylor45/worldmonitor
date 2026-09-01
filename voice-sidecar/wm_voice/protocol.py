@@ -27,6 +27,7 @@ SERVER_MESSAGES: tuple[str, ...] = (
     "response",
     "error",
     "action",
+    "alert",
 )
 CLIENT_MESSAGES: tuple[str, ...] = ("hello", "ptt", "cancel", "context")
 
@@ -86,6 +87,25 @@ def action(name: str, argument: str | None = None) -> str:
     payload: dict[str, Any] = {"type": "action", "action": name}
     if argument is not None:
         payload["argument"] = argument
+    return json.dumps(payload)
+
+
+def alert(active: bool, region: str | None = None, score: float | None = None) -> str:
+    """Frame: the dashboard should raise or clear its alert state.
+
+    Carries the region and score so the panel can label what is wrong, but the
+    *decision* is entirely the sidecar's: the dashboard renders `active` and
+    does not re-evaluate a threshold it has no readings for.
+
+    Sent on every change of state, including the clear. An alert that raises
+    and never clears is a panel flashing red at nobody, which is how a display
+    teaches its owner to ignore it.
+    """
+    payload: dict[str, Any] = {"type": "alert", "active": active}
+    if region is not None:
+        payload["region"] = region
+    if score is not None:
+        payload["score"] = score
     return json.dumps(payload)
 
 

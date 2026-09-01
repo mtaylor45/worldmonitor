@@ -31,6 +31,7 @@ export const SERVER_MESSAGES = [
   'response',
   'error',
   'action',
+  'alert',
 ] as const;
 export type ServerMessageType = (typeof SERVER_MESSAGES)[number];
 
@@ -97,13 +98,35 @@ export interface ActionMessage {
   argument?: string;
 }
 
+/**
+ * Raise or clear the dashboard's alert state.
+ *
+ * SCOPE.md §6 P4-1. The sidecar owns the decision entirely — it holds the
+ * thresholds, the hysteresis and the quiet-hours window, and it is the only
+ * side with readings to evaluate. The dashboard renders `active` and does not
+ * second-guess it.
+ *
+ * This is deliberately unlike `ActionMessage`, which the dashboard validates
+ * again before dispatching. An action is a language model's claim about what
+ * the user wanted; an alert is arithmetic on a number the sidecar fetched, and
+ * there is no second opinion for the dashboard to hold.
+ */
+export interface AlertMessage {
+  type: 'alert';
+  active: boolean;
+  /** What crossed. Absent on a clear. */
+  region?: string;
+  score?: number;
+}
+
 export type ServerMessage =
   | StateMessage
   | WakeMessage
   | TranscriptMessage
   | ResponseMessage
   | ErrorMessage
-  | ActionMessage;
+  | ActionMessage
+  | AlertMessage;
 
 export interface HelloMessage {
   type: 'hello';
@@ -205,6 +228,15 @@ export function parseServerMessage(raw: string): ServerMessage | null {
             type: 'action',
             action: message.action,
             ...(typeof message.argument === 'string' ? { argument: message.argument } : {}),
+          }
+        : null;
+    case 'alert':
+      return typeof message.active === 'boolean'
+        ? {
+            type: 'alert',
+            active: message.active,
+            ...(typeof message.region === 'string' ? { region: message.region } : {}),
+            ...(typeof message.score === 'number' ? { score: message.score } : {}),
           }
         : null;
     default:

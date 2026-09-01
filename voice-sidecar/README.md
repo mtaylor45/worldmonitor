@@ -64,6 +64,12 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | `WM_SILENCE_TAIL` | `0.8` | Quiet after speech that ends the utterance |
 | `WM_LEAD_IN` | `2.5` | Grace before speech starts |
 | `WM_MAX_UTTERANCE` | `12` | Backstop for a room that never goes quiet |
+| `WM_ALERT_RULES` | `*>85` | Proactive alert thresholds. `Region>score`, `Region+rise`, `*` catch-all |
+| `WM_ALERT_CLEAR_MARGIN` | `5.0` | Hysteresis: how far below the line before it can fire again |
+| `WM_ALERT_POLL` | `300` | Seconds between risk-score polls |
+| `WM_ALERT_MIN_INTERVAL` | `900` | Floor between *spoken* alerts |
+| `WM_ALERT_QUIET_HOURS` | `22:00-07:00` | Silences the voice, never the display. Empty disables |
+| `WM_ALERT_SPEAK` | `1` | `0` for a display-only alert state |
 | `WM_TTS_ENGINE` | `kokoro` | Piper if CPU latency disappoints |
 | `WM_TTS_VOICE` | `af_sarah` | Audition on the panel, not in headphones |
 | `WM_SIGNAL_CHAIN` | `1` | `0` to hear a raw voice against a processed one |
@@ -74,6 +80,7 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 |---|---|
 | `audio.py` | One microphone, fanned out. Pre-roll ring buffer |
 | `wake.py` | "Computer": threshold, streak, refractory, playback gating |
+| `alerts.py` | Proactive alerts: thresholds, hysteresis, quiet hours, wording |
 | `phrasing.py` | The register: validator, templates, numerals. **Layer 1** |
 | `commands.py` | P3's boundary: the contract, the prompt, and the validator |
 | `router.py` | Intent tiers. Tier 0 answers without a model at all |
@@ -210,6 +217,55 @@ see whether it is heard. `WM_WAKE_DURING_PLAYBACK=0` gates it for hardware that
 ducks rather than cancels, at the cost of not being interruptible, which is why
 it is not the default. A detection during a turn is announced but starts
 nothing: the turn guard refuses re-entry.
+
+## Proactive alerts
+
+SCOPE.md §6 P4-1. When the Composite Instability Index crosses a threshold the
+panel stops being something you have to look at:
+
+```text
+GET /api/intelligence/v1/get-risk-scores
+      -> AlertWatcher            thresholds, hysteresis, quiet hours
+      -> alert frame             dashboard goes red, alert tone sounds
+      -> templated speech        "Alert. Instability index for Sudan has risen to eighty-seven."
+```
+
+One endpoint returns every tracked region plus the `degraded` and `stale`
+flags, so a poll is one request rather than one per country.
+
+**The failure mode is not "it did not fire".** It is "it fires often enough
+that you stop looking", and four guards exist for that and nothing else:
+
+| Guard | Why |
+|---|---|
+| **Hysteresis** (`WM_ALERT_CLEAR_MARGIN`) | A score oscillating around 85 against a threshold of 85 fires, clears, fires and clears. It has to fall a margin below the line before it can fire again |
+| **A floor between spoken alerts** (`WM_ALERT_MIN_INTERVAL`) | Several regions cross at once. The display carries all of them; the voice speaks the most severe and stays quiet about the rest |
+| **Quiet hours** (`WM_ALERT_QUIET_HOURS`) | Silences the voice, **never the display**. The point of a quiet window is not waking the house, not hiding the situation — an alert raised at 3am is still on the panel at 3am |
+| **Trustworthiness** | `degraded` or `stale` raises nothing, and — just as important — clears nothing. An alert is a claim about the world; a stale cache is a claim about the cache |
+
+**No model runs on this path.** The scope's own example is a template, and a
+model would cost eight to twelve seconds on this CPU, drift out of register
+over a long session, and occasionally read the number back wrong. Same argument
+as tier 0 in the router: the most valuable thing this path does is not use one.
+The phrasing layer still runs, because it runs on every spoken line.
+
+**Rules are user-editable and forgiving.** `WM_ALERT_RULES="*>85, Sudan>75,
+Taiwan+12"` — a named region beats the catch-all, `>` is a level and `+` is a
+24-hour rise (a jump from 40 to 55 is news even though 55 clears no level
+line). A malformed entry is logged and skipped: turning a typo in an
+environment variable into a panel that will not start is strictly worse than
+running the rules that parsed.
+
+**An alert is never spoken over a turn in flight.** A turn owns the speaker,
+and cutting across a spoken answer to announce something the display is already
+showing would be the assistant talking over the person who just asked it a
+question. The display asserts immediately either way.
+
+Unlike an *action*, the dashboard does not re-validate an alert. An action is a
+language model's claim about what the user wanted, so it is checked twice; an
+alert is arithmetic on a number the sidecar fetched, and a second opinion would
+mean shipping a copy of the thresholds to the browser to drift out of step with
+the ones that actually fire.
 
 ## Capture: endpointing, not a fixed window
 

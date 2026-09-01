@@ -13,6 +13,7 @@ import contextlib
 import json
 import unittest
 
+from wm_voice.alerts import AlertWatcher, parse_rules, parse_window
 from wm_voice.audio import BLOCK_BYTES, AudioSource
 from wm_voice.config import Config
 from wm_voice.server import Broadcast, Sidecar
@@ -374,6 +375,206 @@ class _Unavailable:
     @property
     def available(self) -> bool:
         return False
+
+
+class AlertPipeline:
+    """A pipeline that records what it was asked to announce."""
+
+    def __init__(self) -> None:
+        self.announced: list[str] = []
+
+    def update_snapshot(self, snapshot: dict) -> None: ...
+
+    async def announce(self, text: str) -> object:
+        self.announced.append(text)
+        return object()
+
+    async def run(self, audio: bytes) -> object:
+        await asyncio.sleep(0.05)
+        return object()
+
+
+def risk_scores(*scores: tuple[str, float], degraded: bool = False, stale: bool = False) -> dict:
+    return {
+        "ciiScores": [
+            {"region": region, "combinedScore": score, "dynamicScore": 0.0}
+            for region, score in scores
+        ],
+        "degraded": degraded,
+        "stale": stale,
+    }
+
+
+class AlertLoop(unittest.TestCase):
+    """The proactive-alert poller (SCOPE.md §6 P4-1).
+
+    The judgement lives in `alerts.py` and is tested there. What is tested here
+    is the sequencing: when a frame goes out, when speech is held back, and
+    what a failed fetch does to a loop that has to survive for months.
+    """
+
+    def build(self, *, rules: str = "*>85", speak: bool = True):
+        events = Broadcast()
+        socket = FakeSocket()
+        events.add(socket)
+        pipeline = AlertPipeline()
+        payloads: list[object] = []
+
+        async def fetch() -> object:
+            value = payloads.pop(0)
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        watcher = AlertWatcher(
+            parse_rules(rules),
+            clear_margin=5.0,
+            min_interval_s=0.0,
+            quiet_hours=None,
+            speak=speak,
+        )
+        sidecar = Sidecar(
+            pipeline,  # type: ignore[arg-type]
+            events,
+            alerts=watcher,
+            fetch_risk_scores=fetch,
+        )
+        return sidecar, pipeline, socket, payloads
+
+    def alerts(self, socket: FakeSocket) -> list[dict]:
+        return [json.loads(f) for f in socket.sent if json.loads(f)["type"] == "alert"]
+
+    def test_a_crossing_raises_the_display_and_speaks(self) -> None:
+        sidecar, pipeline, socket, payloads = self.build()
+        payloads.append(risk_scores(("Sudan", 87.0)))
+        asyncio.run(sidecar._poll_alerts())
+
+        self.assertEqual(
+            self.alerts(socket),
+            [{"type": "alert", "active": True, "region": "Sudan", "score": 87.0}],
+        )
+        self.assertEqual(
+            pipeline.announced,
+            ["Alert. Instability index for Sudan has risen to 87."],
+        )
+
+    def test_the_frame_is_edge_triggered(self) -> None:
+        # Re-asserting `active` every five minutes would replay the alert tone
+        # on a panel that has been flashing red for an hour.
+        async def scenario() -> tuple[list[dict], list[str]]:
+            sidecar, pipeline, socket, payloads = self.build()
+            payloads.extend([risk_scores(("Sudan", 87.0)), risk_scores(("Sudan", 88.0))])
+            await sidecar._poll_alerts()
+            await sidecar._poll_alerts()
+            return self.alerts(socket), pipeline.announced
+
+        frames, announced = asyncio.run(scenario())
+        self.assertEqual(len(frames), 1)
+        self.assertEqual(len(announced), 1)
+
+    def test_it_clears_when_the_score_falls_away(self) -> None:
+        # An alert that raises and never clears is a panel flashing red at
+        # nobody, which is how a display teaches its owner to ignore it.
+        async def scenario() -> list[dict]:
+            sidecar, _, socket, payloads = self.build()
+            payloads.extend([risk_scores(("Sudan", 87.0)), risk_scores(("Sudan", 60.0))])
+            await sidecar._poll_alerts()
+            await sidecar._poll_alerts()
+            return self.alerts(socket)
+
+        frames = asyncio.run(scenario())
+        self.assertEqual([f["active"] for f in frames], [True, False])
+        # A clear names nothing: there is no region to label.
+        self.assertNotIn("region", frames[1])
+
+    def test_a_failed_fetch_is_a_quiet_miss_not_a_stop(self) -> None:
+        # The API is on the same host and usually up, but "usually" over a
+        # panel that runs for months is a certainty of eventual failure.
+        async def scenario() -> list[dict]:
+            sidecar, _, socket, payloads = self.build()
+            payloads.extend([OSError("connection refused"), risk_scores(("Sudan", 87.0))])
+            with unittest.TestCase().assertLogs("wm_voice", level="WARNING"):
+                await sidecar._poll_alerts()
+            await sidecar._poll_alerts()
+            return self.alerts(socket)
+
+        self.assertEqual([f["active"] for f in asyncio.run(scenario())], [True])
+
+    def test_a_degraded_response_raises_nothing(self) -> None:
+        sidecar, pipeline, socket, payloads = self.build()
+        payloads.append(risk_scores(("Sudan", 99.0), degraded=True))
+        asyncio.run(sidecar._poll_alerts())
+        self.assertEqual(self.alerts(socket), [])
+        self.assertEqual(pipeline.announced, [])
+
+    def test_it_does_not_speak_over_a_turn(self) -> None:
+        # A turn in flight owns the speaker. Cutting across a spoken answer to
+        # announce something the display is already showing would be the
+        # assistant talking over the person who just asked it a question.
+        async def scenario() -> tuple[list[dict], list[str]]:
+            sidecar, pipeline, socket, payloads = self.build()
+            sidecar._capture = lambda **_: _immediate(b"audio")  # type: ignore[assignment]
+            payloads.append(risk_scores(("Sudan", 87.0)))
+            await sidecar.start_turn()
+            with unittest.TestCase().assertLogs("wm_voice", level="INFO"):
+                await sidecar._poll_alerts()
+            frames, announced = self.alerts(socket), list(pipeline.announced)
+            await sidecar.cancel()
+            return frames, announced
+
+        frames, announced = asyncio.run(scenario())
+        # The display asserts regardless - only the voice waits.
+        self.assertEqual([f["active"] for f in frames], [True])
+        self.assertEqual(announced, [])
+
+    def test_the_display_still_asserts_when_speech_is_off(self) -> None:
+        sidecar, pipeline, socket, payloads = self.build(speak=False)
+        payloads.append(risk_scores(("Sudan", 87.0)))
+        asyncio.run(sidecar._poll_alerts())
+        self.assertEqual([f["active"] for f in self.alerts(socket)], [True])
+        self.assertEqual(pipeline.announced, [])
+
+    def test_the_loudest_region_labels_the_frame(self) -> None:
+        sidecar, _, socket, payloads = self.build()
+        payloads.append(risk_scores(("Sudan", 87.0), ("Yemen", 93.0)))
+        asyncio.run(sidecar._poll_alerts())
+        self.assertEqual(self.alerts(socket)[0]["region"], "Yemen")
+
+
+class AlertLifecycle(unittest.TestCase):
+    def sidecar(self, rules: str, *, audio: object = None) -> Sidecar:
+        async def fetch() -> object:
+            return risk_scores()
+
+        return Sidecar(
+            AlertPipeline(),  # type: ignore[arg-type]
+            Broadcast(),
+            alerts=AlertWatcher(parse_rules(rules)),
+            fetch_risk_scores=fetch,
+            audio=audio,  # type: ignore[arg-type]
+        )
+
+    def test_the_loop_runs_without_a_microphone(self) -> None:
+        # The alert state is a visual feature first: a panel with no working
+        # microphone must still go red when the index crosses.
+        async def scenario() -> bool:
+            sidecar = self.sidecar("*>85")
+            await sidecar.start()
+            armed = sidecar._alert_task is not None
+            await sidecar.stop()
+            return armed
+
+        self.assertTrue(asyncio.run(scenario()))
+
+    def test_no_rules_means_no_loop_at_all(self) -> None:
+        async def scenario() -> bool:
+            sidecar = self.sidecar("")
+            await sidecar.start()
+            armed = sidecar._alert_task is not None
+            await sidecar.stop()
+            return armed
+
+        self.assertFalse(asyncio.run(scenario()))
 
 
 async def _immediate(value: bytes) -> bytes:

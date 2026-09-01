@@ -13,6 +13,7 @@
  * feedback for a button whose backend is not up.
  */
 
+import { setAlert } from '../alert';
 import { VoiceClient } from './client';
 import { VOICE_STATES, type DashboardSnapshot, type VoiceState } from './protocol';
 
@@ -63,6 +64,15 @@ export interface BootVoiceOptions {
    * theme layer's registry: `src/boot.ts` supplies the real router.
    */
   performAction?: (action: string, argument?: string) => boolean;
+  /**
+   * Raises or clears the dashboard's alert state.
+   *
+   * Injected for the same reason as `performAction`: the voice layer should
+   * not import a display concern it happens to be the transport for. Defaults
+   * to the real one, because unlike an action there is nothing to validate and
+   * no registry to reach for.
+   */
+  setAlertState?: (active: boolean) => void;
 }
 
 /**
@@ -141,6 +151,21 @@ export function bootVoice(options: BootVoiceOptions = {}): VoicePort {
       const performed = options.performAction?.(action, argument) ?? false;
       play(performed ? 'accept' : 'deny');
       if (!performed) report(`refused action from sidecar: ${action}`);
+    },
+
+    // The sidecar owns this decision entirely - it holds the thresholds, the
+    // hysteresis and the quiet-hours window, and it is the only side with
+    // readings to evaluate. `setAlert` is edge-triggered, so the tone sounds
+    // once per crossing rather than once per poll.
+    onAlert: (active, region) => {
+      try {
+        (options.setAlertState ?? ((value: boolean) => setAlert(value, { doc, playSound: play })))(
+          active,
+        );
+      } catch (error) {
+        report(error instanceof Error ? error.message : String(error));
+      }
+      if (active && region) report(`alert raised: ${region}`);
     },
 
     onTranscript: (text, final) => {

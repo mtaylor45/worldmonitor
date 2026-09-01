@@ -118,6 +118,42 @@ class Config:
     #: Backstop for a room that never goes quiet. Not a target.
     max_utterance_s: float = _float("WM_MAX_UTTERANCE", 12.0)
 
+    # ---- proactive alerts (P4-1) ----------------------------------------
+    #
+    # User-editable thresholds against the Composite Instability Index.
+    # `Region>score` fires at a level; `Region+points` fires on a 24-hour rise,
+    # which catches an escalation that has not yet reached any level line. `*`
+    # is the catch-all, and a named region beats it:
+    #
+    #     WM_ALERT_RULES="*>85, Sudan>75, Taiwan+12"
+    #
+    # A malformed entry is logged and skipped rather than refusing to start:
+    # turning a typo into a dead panel is strictly worse than running the rules
+    # that parsed.
+    alert_rules: str = _env("WM_ALERT_RULES", "*>85")
+
+    # Hysteresis. A score has to fall this far below its line before it can
+    # fire again; without it a reading oscillating around the threshold fires,
+    # clears, fires and clears, and the alert stops meaning anything.
+    alert_clear_margin: float = _float("WM_ALERT_CLEAR_MARGIN", 5.0)
+
+    # CII is recomputed on the order of tens of minutes. Polling faster than
+    # this reads the same number repeatedly and costs a request every time.
+    alert_poll_s: float = _float("WM_ALERT_POLL", 300.0)
+
+    # Floor between SPOKEN alerts. The display carries every crossing; the
+    # voice speaks at most one per interval, because a queue of unprompted
+    # speech is how an always-on assistant becomes something you switch off.
+    alert_min_interval_s: float = _float("WM_ALERT_MIN_INTERVAL", 900.0)
+
+    # Silences the voice, never the display. The point of a quiet window is not
+    # waking the house, not hiding the situation - an alert raised at 3am is
+    # still on the panel at 3am. Empty disables it. Local time.
+    alert_quiet_hours: str = _env("WM_ALERT_QUIET_HOURS", "22:00-07:00")
+
+    # Set to 0 for a display-only alert state, with no unprompted speech at all.
+    alert_speak: bool = _env("WM_ALERT_SPEAK", "1") != "0"
+
     # Kokoro first, Piper if CPU latency disappoints (docs/VOICE-CHARACTER.md).
     tts_engine: str = _env("WM_TTS_ENGINE", "kokoro")
     tts_voice: str = _env("WM_TTS_VOICE", "af_sarah")

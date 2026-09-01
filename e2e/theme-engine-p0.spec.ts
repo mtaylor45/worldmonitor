@@ -715,6 +715,79 @@ test.describe('P3 — voice commands', () => {
   });
 });
 
+test.describe('P4 — proactive alert state', () => {
+  test('the alert hook actually repaints the frame', async ({ page }) => {
+    // The counterpart to "spends salmon and red on nothing but status". That
+    // test proves they are absent at rest; this one proves the block they are
+    // reserved for fires — a hook that has existed since P1 with nothing ever
+    // asserting it works is a hook that quietly stops working.
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const painted = await page.evaluate(async () => {
+      const { setAlert } = await import('/src/alert/index.ts');
+      setAlert(true);
+      const critical = 'rgb(255, 51, 0)';
+      const alert = 'rgb(204, 102, 102)';
+      // The animation alternates between the two on steps(1), so at any
+      // instant every alerting block is one of them.
+      return [...document.querySelectorAll<HTMLElement>('.lcars-elbow, .lcars-rail-btn')].map(
+        (el) => {
+          const bg = getComputedStyle(el).backgroundColor;
+          return bg === critical || bg === alert;
+        },
+      );
+    });
+
+    expect(painted.length).toBeGreaterThan(0);
+    expect(painted.every(Boolean)).toBe(true);
+  });
+
+  test('clearing it leaves the DOM exactly as it was', async ({ page }) => {
+    // Same lossless discipline as chrome teardown: an empty or false-valued
+    // attribute is still an attribute, and `false` would read as present to
+    // anything counting them while looking cleared to the eye.
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const result = await page.evaluate(async () => {
+      const { setAlert } = await import('/src/alert/index.ts');
+      const before = document.documentElement.outerHTML.length;
+      const theme = document.documentElement.getAttribute('data-theme');
+      for (let i = 0; i < 20; i += 1) {
+        setAlert(true);
+        setAlert(false);
+      }
+      return {
+        attributePresent: document.documentElement.hasAttribute('data-wm-alert'),
+        sizeDelta: document.documentElement.outerHTML.length - before,
+        // Upstream's own attribute must be untouched throughout.
+        themeUnchanged: document.documentElement.getAttribute('data-theme') === theme,
+      };
+    });
+
+    expect(result.attributePresent).toBe(false);
+    expect(result.sizeDelta).toBe(0);
+    expect(result.themeUnchanged).toBe(true);
+  });
+
+  test('the default theme shows no alert chrome at all', async ({ page }) => {
+    // `default` declares nothing, so an alert there is a no-op on the display.
+    // That is the safety net the whole engine rests on: if the LCARS frame
+    // ever breaks, switching back restores a working dashboard.
+    await loadDashboard(page, '?wm-theme=default');
+
+    const changed = await page.evaluate(async () => {
+      const { setAlert } = await import('/src/alert/index.ts');
+      const before = getComputedStyle(document.body).backgroundColor;
+      setAlert(true);
+      const after = getComputedStyle(document.body).backgroundColor;
+      setAlert(false);
+      return before !== after;
+    });
+
+    expect(changed).toBe(false);
+  });
+});
+
 test.describe('P0 — kiosk geometry', () => {
   test('neither theme overflows the 1280x720 panel horizontally', async ({ page }) => {
     for (const theme of ['default', 'lcars', 'lcars-bright']) {

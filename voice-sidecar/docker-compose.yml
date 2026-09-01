@@ -32,6 +32,13 @@ services:
       # test, in the room the panel lives in.
       WM_WAKE_THRESHOLD: "0.7"
       WM_WAKE_CONSECUTIVE: "2"
+      # Proactive alerts (P4-1). `*>85` alerts on any region at or above 85;
+      # add named regions and 24-hour rises as needed, e.g.
+      # "*>85, Sudan>75, Taiwan+12". A malformed entry is skipped, not fatal.
+      WM_ALERT_RULES: "*>85"
+      # Silences the voice, never the display: an alert raised at 3am is still
+      # on the panel at 3am, it simply does not announce itself. Local time.
+      WM_ALERT_QUIET_HOURS: "22:00-07:00"
     restart: unless-stopped
 
   # llama.cpp rather than Ollama: native Qwen tool-call parsing, an explicit

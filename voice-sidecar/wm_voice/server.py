@@ -1,9 +1,14 @@
-"""WebSocket server and the wake/PTT loop.
+"""WebSocket server and the three loops that drive it.
 
 Fans state out to every connected dashboard, and accepts push-to-talk from the
 rail's LISTEN button. One sidecar, potentially several viewers - the wall panel
 plus a laptop during development - so every event is broadcast rather than
 addressed.
+
+Three background loops, all owned here and all started and stopped together:
+the wake detector, the capture endpointer, and the proactive-alert poller. The
+judgement in each lives in its own module (`wake.py`, `alerts.py`); what is
+here is the sequencing, which is where the bugs actually are.
 """
 
 from __future__ import annotations
@@ -11,12 +16,20 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from typing import Awaitable, Callable
 
 from . import protocol
+from .alerts import AlertWatcher, readings_from_risk_scores, speech
 from .audio import BLOCK_SAMPLES, SAMPLE_RATE, AudioSource, rms
 from .config import CONFIG, Config
 from .pipeline import Pipeline
 from .wake import WakeWatcher
+
+#: Where the Composite Instability Index comes from. Read out of
+#: `proto/worldmonitor/intelligence/v1/service.proto` - one call returns every
+#: tracked region plus the `degraded` and `stale` flags, so the watcher needs
+#: exactly one request per poll and can tell a real reading from a cached one.
+RISK_SCORES_PATH = "/api/intelligence/v1/get-risk-scores"
 
 log = logging.getLogger("wm_voice")
 
@@ -59,6 +72,15 @@ class Broadcast:
         log.warning("turn failed: %s", message)
         await self._send(protocol.error(message))
 
+    async def alert(
+        self, active: bool, region: str | None = None, score: float | None = None
+    ) -> None:
+        # Logged at info for the same reason as `action`: on an unattended
+        # panel this log is the only record of what the display claimed and
+        # when, which is exactly what a false-alarm complaint needs.
+        log.info("alert %s%s", "raised" if active else "cleared", " " + region if region else "")
+        await self._send(protocol.alert(active, region, score))
+
     async def action(self, name: str, argument: str | None = None) -> None:
         # Logged at info: on a wall panel the action log is the only record of
         # what the assistant was asked to do and what it decided.
@@ -77,6 +99,8 @@ class Sidecar:
         *,
         audio: AudioSource | None = None,
         wake: WakeWatcher | None = None,
+        alerts: AlertWatcher | None = None,
+        fetch_risk_scores: Callable[[], Awaitable[object]] | None = None,
     ) -> None:
         self._config = config
         self._pipeline = pipeline
@@ -85,6 +109,13 @@ class Sidecar:
         self._audio = audio
         self._wake = wake
         self._wake_task: asyncio.Task[None] | None = None
+        self._alerts = alerts
+        self._fetch_risk_scores = fetch_risk_scores
+        self._alert_task: asyncio.Task[None] | None = None
+        #: Last alert state pushed to the dashboard. A frame is sent on change
+        #: only: re-asserting `active` every five minutes would replay the
+        #: alert tone on a panel that has been flashing red for an hour.
+        self._alert_active = False
         #: True while a turn is in flight, which is the window that contains
         #: playback. The wake detector needs to know, because hearing itself is
         #: the failure mode that decides whether the audio device is usable at
@@ -96,7 +127,17 @@ class Sidecar:
         self._speaking = False
 
     async def start(self) -> None:
-        """Opens the microphone and arms the wake word, if one is configured."""
+        """Opens the microphone, arms the wake word and starts watching for alerts."""
+        if (
+            self._alerts is not None
+            and self._alerts.enabled
+            and self._fetch_risk_scores is not None
+        ):
+            # Armed before the audio guard below: the alert state is a visual
+            # feature first, and a panel with no working microphone must still
+            # go red when the index crosses.
+            self._alert_task = asyncio.create_task(self._watch_for_alerts())
+
         if self._audio is None:
             return
         await self._audio.start()
@@ -104,6 +145,11 @@ class Sidecar:
             self._wake_task = asyncio.create_task(self._listen_for_wake())
 
     async def stop(self) -> None:
+        if self._alert_task is not None:
+            self._alert_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._alert_task
+            self._alert_task = None
         if self._wake_task is not None:
             self._wake_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -134,6 +180,61 @@ class Sidecar:
                 # the user actually perceives.
                 await self._pipeline.on_wake(detection.confidence)
                 await self.start_turn(from_wake=True)
+
+    async def _watch_for_alerts(self) -> None:
+        """Polls the risk scores and asserts the alert state.
+
+        Runs for the life of the sidecar. Everything that decides whether this
+        is an interruption worth making lives in `AlertWatcher`; this loop only
+        fetches, hands over, and publishes the outcome.
+        """
+        assert self._alerts is not None and self._fetch_risk_scores is not None
+        while True:
+            await self._poll_alerts()
+            await asyncio.sleep(self._config.alert_poll_s)
+
+    async def _poll_alerts(self) -> None:
+        """One poll. Never raises: a fetch failure is a quiet miss, not a stop.
+
+        The API is on the same host and is usually up, but "usually" over a
+        panel that runs for months is a certainty of eventual failure, and an
+        exception here would end the loop and silently disable alerts for the
+        rest of the session.
+        """
+        assert self._alerts is not None and self._fetch_risk_scores is not None
+        try:
+            payload = await self._fetch_risk_scores()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("risk scores unavailable: %s", exc)
+            return
+
+        readings, trustworthy = readings_from_risk_scores(payload)
+        raised = self._alerts.evaluate(readings, trustworthy=trustworthy)
+
+        # Published on a state CHANGE, so the chirp and the tone fire once per
+        # crossing rather than once per poll.
+        if self._alerts.active != self._alert_active:
+            self._alert_active = self._alerts.active
+            top = max(raised, key=lambda a: a.score) if raised else None
+            await self._events.alert(
+                self._alert_active,
+                top.region if top else None,
+                top.score if top else None,
+            )
+
+        announce = self._alerts.to_announce(raised)
+        if announce is None:
+            return
+
+        # Never over the user. A turn in flight owns the speaker, and cutting
+        # across a spoken answer to announce something the display is already
+        # showing would be the assistant talking over the person who asked it a
+        # question.
+        if self._turn and not self._turn.done():
+            log.info("alert not spoken: a turn is in flight (%s)", announce.region)
+            return
+
+        await self._pipeline.announce(speech(announce))
 
     async def handle(self, socket: object) -> None:
         """One dashboard connection."""
