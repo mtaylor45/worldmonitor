@@ -99,15 +99,18 @@ kept locally as an ignored copy.
 | `louh/lcars` | GPL-3.0 | `src/themes/lcars/tokens.ts` | Drexler palette custom properties |
 | `louh/lcars` | GPL-3.0 | `src/themes/lcars/lcars.css` | Pill-cap radius, cap-height factor, `user-select` technique |
 | `louh/lcars` | GPL-3.0 | `src/themes/lcars/chrome.ts` | Frame composition (rail / elbow / content well), decorative four-digit control codes |
+| `louh/lcars` | GPL-3.0 | `public/sounds/*.ogg` | Six UI sounds. Licence at `public/sounds/LCARS-SOUNDS-LICENSE.txt` |
+| Antonio | OFL-1.1 | `public/fonts/antonio-*.woff2` | Self-hosted display face. Licence at `public/fonts/Antonio-OFL.txt` |
 
 GPL-3.0 is compatible with this fork's AGPL-3.0 via AGPLv3 §13; the combined
 work is AGPL. Attribution is carried in a header comment on each file above and
 recorded here. Full review in `docs/LCARS-ASSETS.md`.
 
-Sound assets (`public/sounds/*.ogg`) are **not yet vendored** — the slots are
-declared in `src/themes/lcars/index.ts` and the files land in P1. Their origin
-is unstated and they are likely show-sourced: acceptable for a personal LAN
-kiosk, and to be replaced before any public distribution.
+The sound files' origin is unstated in the source repo and they are likely
+show-sourced. Acceptable for a personal LAN kiosk; **they must be replaced
+before any public distribution.** The slot indirection in
+`src/themes/sounds.ts` means that replacement is a change of file, not of any
+call site.
 
 ---
 
@@ -136,6 +139,24 @@ frame padding + body gap, recorded as `--wm-frame-inset`).
 If upstream retunes its ladder, these must be re-derived. The e2e assertion
 "upstream header fits the content well instead of being clipped" measures
 `.header` `scrollWidth` against `clientWidth` and fails if it regresses.
+
+### The 12-column panel grid
+
+`src/themes/lcars/lcars.css` restyles `.panels-grid` into a twelve-column
+module and assigns each `.panel` a whole-column span.
+
+The span ladder exists for a measured reason. `.panels-grid` does not get the
+whole content well: `.main-content` is itself a grid, and in the map-right
+layout the pinned map takes ~680px of the 1137px well, leaving the panel grid
+~449px. Twelve columns there are ~32px each, so a naive "plain panel = 3
+columns" lands at 106px and panel titles ellipsis to a single letter. The
+spans therefore adapt to the grid's own width through a container query, and
+an e2e assertion fails if any panel drops below 270px.
+
+This reads three upstream classes — `.panel`, `.span-2`, `.panel-wide` — and
+upstream's own `--dashboard-panel-row-*` tokens. It deliberately does NOT
+touch `--map-col-width`: that split is user-resizable and persisted, and
+snapping it to the module would fight a feature for a notional gain.
 
 ### `data-theme` is upstream's, not ours
 

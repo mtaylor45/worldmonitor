@@ -7,9 +7,10 @@
  */
 
 import { DEFAULT_THEME_ID, themes } from './engine';
+import { createActions, installActions, type ActionRouter } from './actions';
+import { createSoundPlayer, type SoundPlayer } from './sounds';
 import { defaultTheme } from './default';
 import { lcars, lcarsBright } from './lcars';
-import { ACTION_EVENT, type ActionDetail } from './types';
 
 export {
   CONTENT_ATTRIBUTE,
@@ -23,6 +24,16 @@ export {
   themes,
 } from './engine';
 export { ACTION_EVENT, THEME_CHANGE_EVENT } from './types';
+export {
+  FOCUS_ATTRIBUTE,
+  createActions,
+  installActions,
+  panelKeys,
+  parseAction,
+  type ActionDefinition,
+  type ActionRouter,
+} from './actions';
+export { createSoundPlayer, type SoundPlayer } from './sounds';
 export type {
   ActionDetail,
   ChromeContext,
@@ -38,6 +49,8 @@ export type {
 themes.register(defaultTheme, lcars, lcarsBright);
 
 let booted = false;
+let router: ActionRouter | null = null;
+let sounds: SoundPlayer | null = null;
 
 /**
  * Reads the URL override for a theme, e.g. `?wm-theme=lcars`.
@@ -81,19 +94,29 @@ export function bootThemes(): Promise<void> {
   booted = true;
 
   try {
-    window.addEventListener(ACTION_EVENT, (ev) => {
-      const { action, payload } = (ev as CustomEvent<ActionDetail>).detail ?? {};
+    // Sounds follow the active theme: a slot name is all any caller knows, and
+    // the theme decides what it sounds like.
+    sounds = createSoundPlayer();
+    themes.onChange((theme) => sounds?.load(theme));
 
-      if (action === 'theme.cycle') {
-        const all = themes.list();
-        const i = all.findIndex((t) => t.id === themes.current?.id);
-        void themes.apply(all[(i + 1) % all.length]?.id ?? DEFAULT_THEME_ID);
-      }
-
-      if (action === 'theme.set' && typeof payload === 'string') {
-        if (themes.list().some((t) => t.id === payload)) void themes.apply(payload);
-      }
-    });
+    router = installActions(
+      createActions({
+        set: (id) => void themes.apply(id),
+        cycle: () => {
+          const all = themes.list();
+          const i = all.findIndex((t) => t.id === themes.current?.id);
+          void themes.apply(all[(i + 1) % all.length]?.id ?? DEFAULT_THEME_ID);
+        },
+        ids: () => themes.list().map((t) => t.id),
+      }),
+      // Audible outcome for every dispatch: the refusal tone on a command that
+      // could not be carried out is what stops a dead rail button reading as a
+      // broken panel.
+      (action, handled) => {
+        if (!handled) return sounds?.play('deny');
+        sounds?.play(action.startsWith('theme.') ? 'change' : 'accept');
+      },
+    );
 
     const pinned = themeFromUrl();
     if (pinned) return themes.apply(pinned, { persist: false }).then(() => undefined);
@@ -105,7 +128,16 @@ export function bootThemes(): Promise<void> {
   }
 }
 
+/** The action router, once `bootThemes()` has run. P3's tool executor uses it. */
+export function getActionRouter(): ActionRouter | null {
+  return router;
+}
+
 /** Test seam: lets a suite boot the module-level listener wiring again. */
 export function resetThemeBootForTests(): void {
+  router?.dispose();
+  router = null;
+  sounds?.dispose();
+  sounds = null;
   booted = false;
 }

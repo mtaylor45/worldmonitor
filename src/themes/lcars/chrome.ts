@@ -28,10 +28,16 @@ interface RailItem {
   action: string;
 }
 
+/**
+ * Rail bindings. Every `panel.focus` target is a real upstream `data-panel`
+ * key, verified against a running dashboard — a rail button pointing at a
+ * panel that does not exist would silently do nothing, which on a wall panel
+ * is indistinguishable from a broken display.
+ */
 const RAIL: RailItem[] = [
-  { id: 'brief', label: 'BRIEF', tone: 'tan', action: 'panel.focus:brief' },
-  { id: 'globe', label: 'GLOBE', tone: 'periwinkle', action: 'panel.focus:globe' },
-  { id: 'feeds', label: 'FEEDS', tone: 'tan', action: 'panel.focus:feeds' },
+  { id: 'brief', label: 'BRIEF', tone: 'tan', action: 'panel.focus:latest-brief' },
+  { id: 'globe', label: 'GLOBE', tone: 'periwinkle', action: 'map.focus' },
+  { id: 'feeds', label: 'FEEDS', tone: 'tan', action: 'panel.focus:live-news' },
   { id: 'cii', label: 'STRESS', tone: 'lilac', action: 'panel.focus:cii' },
   { id: 'markets', label: 'MARKETS', tone: 'periwinkle', action: 'panel.focus:markets' },
   { id: 'energy', label: 'ENERGY', tone: 'ice', action: 'panel.focus:energy' },

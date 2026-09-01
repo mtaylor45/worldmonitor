@@ -337,6 +337,119 @@ test.describe('P1 — LCARS frame', () => {
   });
 });
 
+test.describe('P1 — LCARS assets and grid', () => {
+  test('renders its chrome with zero network dependency', async ({ page }) => {
+    // SCOPE.md §5 P1 acceptance. A kiosk on a LAN must not need Google Fonts
+    // to draw its own frame, and a font that silently falls back to Arial
+    // Narrow changes every cap height in the rail.
+    const external: string[] = [];
+    await page.route('**/*', (route) => {
+      const url = route.request().url();
+      if (/fonts\.(googleapis|gstatic)\.com/.test(url)) external.push(url);
+      return route.continue();
+    });
+
+    await loadDashboard(page, '?wm-theme=lcars');
+    await page.evaluate(() => document.fonts.ready);
+
+    expect(external, 'chrome reached out to Google Fonts').toEqual([]);
+    const loaded = await page.evaluate(() => document.fonts.check('16px Antonio'));
+    expect(loaded, 'self-hosted Antonio did not load').toBe(true);
+
+    const family = await page.locator('.lcars-rail-label').first().evaluate(
+      (el) => getComputedStyle(el).fontFamily,
+    );
+    expect(family).toContain('Antonio');
+  });
+
+  test('serves every sound the theme declares', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const urls = await page.evaluate(async () => {
+      const { themes } = await import('/src/themes/index.ts');
+      return Object.values(themes.current?.sounds ?? {}) as string[];
+    });
+    expect(urls.length).toBeGreaterThan(0);
+
+    for (const url of urls) {
+      const res = await page.request.get(url);
+      expect(res.status(), `${url} is not served`).toBe(200);
+      // Ogg container magic. A 200 that returns the SPA's index.html would
+      // otherwise pass a status-only check and fail silently at playback.
+      const body = await res.body();
+      expect(body.subarray(0, 4).toString('latin1'), `${url} is not Ogg`).toBe('OggS');
+    }
+  });
+
+  test('the rail is a column of squared blocks, not pills', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const radii = await page.locator('.lcars-rail-btn').evaluateAll((els) =>
+      els.map((el) => getComputedStyle(el).borderRadius),
+    );
+    expect(radii.length).toBe(8);
+    // Every individual block is square; only the column's caps terminate in a
+    // curve where it meets the header elbow and the footer.
+    for (const radius of radii) expect(radius).toBe('0px');
+  });
+
+  test('maps upstream panels onto whole numbers of twelve columns', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const grid = await page.evaluate(() => {
+      const g = document.querySelector<HTMLElement>('#panelsGrid');
+      if (!g) return null;
+      const columns = getComputedStyle(g).gridTemplateColumns.split(' ').length;
+      const spans = [...g.querySelectorAll<HTMLElement>(':scope > .panel')].map(
+        (el) => getComputedStyle(el).gridColumn,
+      );
+      const widths = [...g.querySelectorAll<HTMLElement>(':scope > .panel')].map((el) =>
+        Math.round(el.getBoundingClientRect().width),
+      );
+      return { columns, spans, widths };
+    });
+
+    expect(grid).not.toBeNull();
+    expect(grid!.columns, 'panels grid is not twelve columns').toBe(12);
+    expect(grid!.spans.length).toBeGreaterThan(0);
+    for (const span of grid!.spans) {
+      expect(span, `"${span}" is not a whole-column span`).toMatch(/^span \d+( \/ span \d+)?$/);
+    }
+    // No panel squeezed under the 280px upstream itself declares it needs —
+    // the failure mode that made panel titles ellipsis to a single letter.
+    for (const width of grid!.widths) expect(width).toBeGreaterThanOrEqual(270);
+  });
+
+  test('a rail button focuses the real upstream panel it names', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // STRESS is bound to panel.focus:cii. The binding is only meaningful if
+    // `cii` is a key upstream actually renders.
+    await page.locator('[data-wm-action="panel.focus:cii"]').click();
+    await expect(page.locator('[data-panel="cii"][data-wm-focus="true"]')).toHaveCount(1);
+  });
+
+  test('generates the P3 tool schema from the action registry', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const schema = await page.evaluate(async () => {
+      const { getActionRouter } = await import('/src/themes/index.ts');
+      return getActionRouter()?.toolSchema() ?? [];
+    });
+
+    // Every rail action must be reachable by the voice layer — that is P3's
+    // acceptance criterion, and generating the schema is what guarantees it
+    // rather than a second hand-maintained list drifting out of step.
+    const names = schema.map((t) => t.name);
+    expect(names).toContain('panel_focus');
+    expect(names).toContain('theme_set');
+    expect(names).toContain('voice_ptt');
+
+    const focus = schema.find((t) => t.name === 'panel_focus');
+    expect(focus?.parameters.properties.panel?.enum ?? []).toContain('cii');
+  });
+});
+
 test.describe('P0 — kiosk geometry', () => {
   test('neither theme overflows the 1280x720 panel horizontally', async ({ page }) => {
     for (const theme of ['default', 'lcars', 'lcars-bright']) {

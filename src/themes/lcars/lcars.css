@@ -10,6 +10,40 @@
    the full review and attribution.
    ============================================================ */
 
+/* ---------- Type ----------
+   Self-hosted, no CDN: the kiosk must render its own chrome with zero network
+   dependency (SCOPE.md §5 P1). Antonio ships as a variable font, so one file
+   per subset covers the whole 400-700 range that the theme's weight tokens ask
+   for -- 43 KB total rather than six static cuts.
+
+   `font-display: block` rather than `swap`: on a 9in panel a flash of Arial
+   Narrow in an LCARS block is worse than a beat of nothing, because the
+   fallback's different cap height visibly reflows every rail label.
+
+   Licence: SIL OFL 1.1, retained at public/fonts/Antonio-OFL.txt. */
+
+@font-face {
+  font-family: 'Antonio';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: block;
+  src: url('/fonts/antonio-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Antonio';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: block;
+  src: url('/fonts/antonio-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
+    U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+    U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
 :root[data-wm-theme^="lcars"] body {
   /* A kiosk panel is never selected from; a stray drag-select on a 9" display
      is only ever an accident. Matches louh/lcars. */
@@ -155,8 +189,10 @@
   background: var(--wm-color-tan);
 }
 
+/* Only the outer edge curves — the inner edge stays square so the cap reads as
+   part of the same column as the blocks below it, not a separate pill. */
 .lcars-cap--top {
-  border-top-left-radius: var(--wm-radius-cap);
+  border-top-left-radius: var(--wm-radius-elbow-inner);
   border-top-right-radius: var(--wm-radius-block);
 }
 
@@ -182,12 +218,13 @@
   font-family: var(--wm-font-body);
   cursor: pointer;
   text-align: right;
-  /* Pill caps as a percentage radius, not 999px: this stays correct at any row
-     height, where a fixed radius flattens as the block grows. */
-  border-top-left-radius: 50% 50%;
-  border-bottom-left-radius: 50% 50%;
-  border-top-right-radius: var(--wm-radius-block);
-  border-bottom-right-radius: var(--wm-radius-block);
+  /* Individual SQUARED panels, not pills.
+     An earlier cut gave every rail button a 50% outer radius, which read as a
+     stack of lozenges rather than a console. In the reference screens the rail
+     is a column of plain rectangular blocks; only the column as a whole
+     terminates in a curve, where it meets the header elbow above and the
+     footer below. The caps below are those terminators. */
+  border-radius: var(--wm-radius-block);
 }
 
 .lcars-rail-code {
@@ -256,10 +293,70 @@
   border-radius: var(--wm-radius-block) var(--wm-radius-cap) var(--wm-radius-cap) var(--wm-radius-block);
 }
 
-/* ---------- Panels ---------- */
+/* ---------- Panels: the 12-column content grid ----------
+
+   Upstream lays panels out as `repeat(auto-fill, minmax(280px, 1fr))`, which
+   gives a ragged column count that changes with the container. LCARS wants a
+   fixed module: a 12-column grid where every panel occupies a whole number of
+   columns, so blocks line up down the screen the way an Okudagram does.
+
+   The catch, and the reason for the ladder below: `.panels-grid` does NOT get
+   the whole content well. In upstream's map-right layout the pinned map takes
+   ~680px and leaves the grid ~449px, where twelve columns are ~32px each and a
+   naive "plain panel = 3 columns" lands at 106px — narrow enough that panel
+   titles ellipsis away to a single letter. Measured, not assumed.
+
+   So the module is 12 columns always, and the SPANS adapt to the width the
+   grid actually has. A container query rather than a media query, because the
+   thing that varies is the grid's own width — the viewport is fixed at 1280
+   and never moves. Below, panels never fall under ~280px, which is the width
+   upstream itself declares its content needs.
+
+   The unqueried spans are the narrow case, so a browser without container
+   query support degrades to one panel per row rather than to unreadable ones. */
+
+:root[data-wm-theme^="lcars"] .panels-grid {
+  container-type: inline-size;
+  container-name: wm-panels;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: minmax(var(--dashboard-panel-row-min), var(--dashboard-panel-row-max));
+  gap: var(--wm-space-gutter);
+  padding: var(--wm-space-gutter);
+}
+
+/* Narrow — the map-right default at 1280x720. One panel per row. */
+:root[data-wm-theme^="lcars"] .panels-grid > .panel { grid-column: span 12; }
+
+/* Half the well: two-up for plain panels, full row for emphasised ones. */
+@container wm-panels (min-width: 620px) {
+  :root[data-wm-theme^="lcars"] .panels-grid > .panel { grid-column: span 6; }
+  :root[data-wm-theme^="lcars"] .panels-grid > .panel.span-2,
+  :root[data-wm-theme^="lcars"] .panels-grid > .panel.panel-wide { grid-column: span 12; }
+}
+
+/* Full well — the map collapsed, or a wider panel some day. The real module:
+   quarters for plain panels, halves for emphasised, full row for both. */
+@container wm-panels (min-width: 1160px) {
+  :root[data-wm-theme^="lcars"] .panels-grid > .panel { grid-column: span 3; }
+  :root[data-wm-theme^="lcars"] .panels-grid > .panel.span-2,
+  :root[data-wm-theme^="lcars"] .panels-grid > .panel.panel-wide { grid-column: span 6; }
+  :root[data-wm-theme^="lcars"] .panels-grid > .panel.panel-wide.span-2 { grid-column: span 12; }
+}
 
 .lcars-panel {
+  /* Square blocks separated by the 5px black gutter. That gutter, not the
+     palette, is what makes a grid of panels read as LCARS. */
   border-radius: var(--wm-radius-block);
+  min-width: 0;
+}
+
+/* Focus marker set by `panel.focus` (src/themes/actions.ts). Corner brackets
+   are P4-6; until the SVG lands this is the honest minimum — a bright edge on
+   the panel the rail or the assistant just named, so the user knows which
+   numbers were meant. Uses the readout gold, never the alert salmon. */
+.lcars-panel[data-wm-focus='true'] {
+  outline: 3px solid var(--wm-color-readout);
+  outline-offset: -3px;
 }
 
 /* ---------- Alert state ----------

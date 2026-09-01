@@ -40,6 +40,9 @@ Log every upstream file touched in `docs/UPSTREAM-DIFF.md`.
 | Path | Contents |
 |---|---|
 | `src/themes/` | Theme engine, token contract, `default` and LCARS themes |
+| `src/themes/actions.ts` | Action registry — one source of truth for rail and voice |
+| `src/themes/sounds.ts` | Slot-based UI sound playback |
+| `public/fonts/`, `public/sounds/` | Self-hosted Antonio and LCARS UI sounds |
 | `src/voice/` | Voice sidecar client (P2) |
 | `src/context/` | Panel state snapshot for the LLM (P3) |
 | `deploy/kiosk/` | `cage` + Chromium + systemd kiosk profile |
@@ -112,8 +115,24 @@ light/dark. Ours is `data-wm-theme`. Writing the theme id into `data-theme`
 would silently clobber upstream's colour scheme.
 
 **Action strings are `namespace.verb`** (`theme.set`, `voice.ptt`,
-`panel.focus`). One registry, and the P3 voice tool schema derives from it.
-Rail buttons already carry `data-wm-action` in this form.
+`panel.focus`), optionally with a colon-suffixed argument: `panel.focus:cii`.
+One registry in `src/themes/actions.ts`, and the P3 tool schema is *generated*
+from it by `toolSchema()` — never hand-maintained beside it. That is what makes
+"every rail button action is also reachable by voice" structural rather than
+aspirational.
+
+**A rail button must name a panel upstream actually renders.** `panel.focus`
+targets are `data-panel` keys verified against a running dashboard; a button
+pointing at a key that does not exist silently does nothing, which on a wall
+panel is indistinguishable from a broken display. The refusal tone on an
+unhandled action is the other half of that guard.
+
+**Sound callers name a slot, never a file.** `wake`, `accept`, `change`,
+`deny`, `alert` — the active theme decides what each sounds like, so a second
+theme ships its own set without touching a call site.
+
+**The rail is squared blocks, not pills.** Only the column terminates in a
+curve, where it meets the header elbow and the footer.
 
 ---
 
@@ -165,14 +184,21 @@ Two traps, both hit during P0:
 
 ## Current state
 
-P0 complete and verified. P1 not started.
+P0 and P1 are complete and verified. P2 not started.
 
-The LCARS frame is fully built: rail with working actions, header elbow, footer
-voice indicator, and the dashboard re-parented into `[data-wm-content]`.
+The LCARS theme is whole: self-hosted Antonio, vendored sounds wired by slot,
+rail bound to real panel keys, the 12-column grid with its container-query span
+ladder, and both palettes selectable.
 
-Still outstanding for P1: the **12-column panel mapping**. The rail takes 104px
-and upstream's header does not reflow, so its right-hand controls are clipped at
-1280px. Antonio and the sound assets are also not loaded yet.
+Outstanding, and deliberately so:
+
+- **`voice.ptt` reports failure.** P2 owns the sidecar; until it exists the
+  rail plays the refusal tone rather than pretending the button works.
+- **The cap-height factor (1.36) is a token, not yet applied.** It is
+  calibrated for Swiss 911, and Antonio has different vertical metrics.
+- **The kiosk profile is unverified on hardware** — the panel is unsourced.
+- **The palette choice is unmade.** It is a legibility test at 2.5 m;
+  `preview/lcars-preview.html` exists to settle it on the panel.
 
 The kiosk profile in `deploy/kiosk/` is written but **not verified on hardware**;
 the panel has not been sourced.
