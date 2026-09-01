@@ -10,6 +10,7 @@ import { registerLcpReporting } from '@/bootstrap/lcp-report';
 import { initVercelAnalytics } from '@/bootstrap/secondary-startup';
 import { loadVariantThemeStylesheet } from '@/bootstrap/variant-theme';
 import { App } from './App';
+import { bootThemes } from './themes';
 import { installUtmInterceptor } from './utils/utm';
 import { captureContentAttributionFromUrl } from '../shared/content-attribution';
 
@@ -604,6 +605,7 @@ if (urlParams.get('settings') === '1') {
 } else {
   installUtmInterceptor();
   markLcpDebug('wm:boot:app-construct');
+  bootThemes();
   const app = new App('app');
   app
     .init()
