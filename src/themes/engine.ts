@@ -68,15 +68,46 @@ export class ThemeEngine {
   private active: Theme | undefined;
   /** Teardowns for everything the active theme mounted, in mount order. */
   private teardowns: ChromeTeardown[] = [];
+  private readonly listeners = new Set<(theme: Theme) => void>();
+  /** Guards against an in-flight apply() being overtaken by a later one. */
+  private generation = 0;
+  private sheetEl: HTMLLinkElement | null = null;
   private shellObserver: MutationObserver | null = null;
   private panelObserver: MutationObserver | null = null;
   /** Panel hosts the active theme's `panel` slot is currently mounted on. */
   private readonly mountedPanels = new WeakSet<HTMLElement>();
 
-  constructor(private readonly doc: Document = document) {}
+  /**
+   * @param doc  Document to operate on. Injected for tests.
+   * @param stylesheetTimeoutMs  Upper bound on waiting for a theme's <link> to
+   *   fire `load`. A stalled stylesheet fetch must never block boot on an
+   *   unattended panel — after this the switch proceeds tokens-first and the
+   *   sheet applies whenever it arrives. Tests pass 0 to skip the wait, since
+   *   happy-dom does not fetch stylesheets and never fires the event.
+   */
+  constructor(
+    private readonly doc: Document = document,
+    private readonly stylesheetTimeoutMs: number = 1_500,
+  ) {}
 
-  register(...themes: Theme[]): void {
+  register(...themes: Theme[]): this {
     for (const theme of themes) this.registry.set(theme.id, theme);
+    return this;
+  }
+
+  /**
+   * Subscribe to theme changes. Returns an unsubscribe function.
+   *
+   * Complements the `wm:theme-change` DOM event rather than replacing it: this
+   * is the typed path for code inside our own tree, the event is for anything
+   * listening from outside it (and for tests that would rather not hold a
+   * reference to the engine).
+   */
+  onChange(fn: (theme: Theme) => void): () => void {
+    this.listeners.add(fn);
+    return () => {
+      this.listeners.delete(fn);
+    };
   }
 
   list(): Theme[] {
@@ -109,26 +140,37 @@ export class ThemeEngine {
     if (this.active?.id === theme.id) return theme.id;
 
     const previous = this.active?.id ?? null;
+    const generation = ++this.generation;
 
     // Teardown first, and unconditionally: chrome must never outlive its theme.
     this.teardownChrome();
-    this.removeStylesheet();
-
     this.writeTokens(theme);
+
+    // The stylesheet lands BEFORE the attribute flips, and the swap waits for
+    // the <link> to fire load. Chrome is styled by `[data-wm-theme] ...`
+    // selectors, so flipping the attribute first would paint a frame of
+    // unstyled frame markup on every cold switch — very visible on a wall
+    // panel, where the switch is the only thing moving on screen.
+    await this.swapStylesheet(theme);
+    // Another apply() may have started while that was in flight.
+    if (generation !== this.generation) return theme.id;
+
     this.doc.documentElement.setAttribute(THEME_ATTRIBUTE, theme.id);
     this.active = theme;
 
-    // Chrome mounts before the stylesheet resolves. The frame is styleless for
-    // one frame on a cold switch, which is the right trade on a kiosk: the DOM
-    // the dashboard renders into must exist before upstream looks for it.
     this.mountChrome(theme);
     this.watchShell(theme);
     this.warnOffTarget(theme);
 
     if (persist) writeStoredTheme(theme.id);
     this.emit({ previous, current: theme.id });
-
-    await this.loadStylesheet(theme);
+    for (const fn of this.listeners) {
+      try {
+        fn(theme);
+      } catch (error) {
+        report('theme change listener threw', error);
+      }
+    }
     return theme.id;
   }
 
@@ -179,30 +221,60 @@ export class ThemeEngine {
 
   // ------------------------------------------------------------ stylesheet
 
-  private async loadStylesheet(theme: Theme): Promise<void> {
+  /**
+   * Removes the outgoing theme's <link> and, if the incoming theme has one,
+   * appends its replacement and waits for it to load.
+   *
+   * Resolves on error as well as success. A missing theme sheet should degrade
+   * to tokens-only, not hang boot on a kiosk with no keyboard attached.
+   */
+  private async swapStylesheet(theme: Theme): Promise<void> {
+    this.sheetEl?.remove();
+    this.sheetEl = null;
+    // Belt and braces: a link left by an earlier engine instance (tests, HMR)
+    // is not tracked by `sheetEl` but would still apply.
+    this.doc.querySelectorAll(`link[${STYLESHEET_LINK_ATTR}]`).forEach((link) => {
+      link.remove();
+    });
     if (!theme.stylesheet) return;
+
+    let href: string;
     try {
-      const mod = await theme.stylesheet();
-      // The theme may have changed while the import was in flight.
-      if (this.active?.id !== theme.id) return;
-      const link = this.doc.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = mod.default;
-      link.setAttribute(STYLESHEET_LINK_ATTR, theme.id);
-      (this.doc.head ?? this.doc.documentElement).appendChild(link);
+      href = (await theme.stylesheet()).default;
     } catch (error) {
       // Vite's preload helper rejects a CSS import with "Unable to preload CSS
       // for <url>" when the injected link errors, and an unconsumed rejection
       // surfaces as an unhandled error. Upstream hit exactly this with
       // happy-theme.css (see bootstrap/variant-theme.ts); same contract, kept
       // in our tree so we do not depend on the shape of an upstream export.
-      report(`stylesheet failed to load for "${theme.id}"`, error);
+      report(`stylesheet import failed for "${theme.id}"`, error);
+      return;
     }
-  }
 
-  private removeStylesheet(): void {
-    this.doc.querySelectorAll(`link[${STYLESHEET_LINK_ATTR}]`).forEach((link) => {
-      link.remove();
+    const link = this.doc.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = href;
+    link.setAttribute(STYLESHEET_LINK_ATTR, theme.id);
+    (this.doc.head ?? this.doc.documentElement).appendChild(link);
+    this.sheetEl = link;
+
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      link.onload = done;
+      link.onerror = () => {
+        report(`stylesheet failed to load for "${theme.id}"`, href);
+        done();
+      };
+      if (this.stylesheetTimeoutMs <= 0) {
+        done();
+        return;
+      }
+      setTimeout(done, this.stylesheetTimeoutMs);
     });
   }
 

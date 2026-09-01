@@ -13,7 +13,7 @@ The combined work is AGPL. Attribution is required on every lifted file and in
 
 | Asset | Path | Size | Use | Status |
 |---|---|---|---|---|
-| UI sounds x6 | `public/sounds/*.ogg` | 140 KB | Wake ack, command accepted, refusal, alert | P1 |
+| UI sounds x6 | `public/sounds/*.ogg` | 130 KB | Wake ack, command accepted, refusal, alert | **Done** — vendored, played by slot |
 | Drexler palette | `src/styles/index.css` | — | Palette variant A | **Done** — `src/themes/lcars/tokens.ts` |
 | Corner bracket | `src/bracket-top-left.svg` | 1 KB | Focus indicator | P4-6 |
 | Random code utils | `src/utils/index.ts` | — | Ornamental filler only | Optional |
@@ -34,8 +34,22 @@ Characters are documented in the source repo's `src/utils/sounds.ts`.
 Play at volume 0.15–0.2; the raw files are loud. Six preloaded `Audio` objects
 is the whole implementation — Howler is not worth its weight for this.
 
-The slots are already declared in `src/themes/lcars/index.ts` so the mapping is
-reviewable before the files land.
+The files are vendored at `public/sounds/`, the slot map lives in
+`src/themes/lcars/index.ts`, and playback is `src/themes/sounds.ts` — six
+preloaded `Audio` objects, rewound rather than reallocated on repeat presses.
+
+Callers ask for a **slot**, never a filename, so a second theme can ship an
+entirely different sound set without touching a call site.
+
+Two things worth knowing about playback on a kiosk. Browsers block audio until
+the user has interacted with the page, and a wall panel boots untouched — so
+the player stays silent-but-harmless until the first pointer or key event
+unlocks it. And every dispatched action gets an audible outcome: the refusal
+tone on a command that could not be carried out is what stops a dead rail
+button reading as a broken panel.
+
+The GPL-3.0 licence text is retained at
+`public/sounds/LCARS-SOUNDS-LICENSE.txt`.
 
 > **Provenance caveat.** The origin of these files is unstated in the source
 > repo and they are likely show-sourced. Acceptable for a personal LAN kiosk.
@@ -65,8 +79,8 @@ that reserves it is deliberate.
 
 | Technique | Status |
 |---|---|
-| Pill caps as `border-radius: 50%` on two corners, not `999px` | **Adopted.** Scales with row height; a fixed radius flattens as the block grows. |
-| Cap-height matching via `font-size: calc(row-height * 1.36)` | **Adopted, factor unverified.** 1.36 is calibrated for Swiss 911. Antonio has different vertical metrics — P1 must re-measure against rendered text rather than inherit the number on faith. |
+| Pill caps as `border-radius: 50%` on two corners, not `999px` | **Adopted for the caps that terminate a column.** Individual rail blocks are square — see below. |
+| Cap-height matching via `font-size: calc(row-height * 1.36)` | **Recorded as a token, not yet applied.** 1.36 is calibrated for Swiss 911; Antonio has different vertical metrics. The rail sizes from the type scale instead, which holds at 1280x720 and clears the 13px floor. Re-measure against rendered text before adopting the factor. |
 | `user-select: none` on body | **Adopted.** A kiosk panel is never selected from. |
 | `font-display: block` on the face | P1, with the self-hosted Antonio. |
 | Text `<span>` carries the *background* colour over a coloured bar, punching the label through it | **Not yet.** The authentic Okudagram look and the one technique our stylesheet most conspicuously lacks. The rail markup already puts labels in their own `<span>` so P1 can apply it without touching chrome structure. |
@@ -86,11 +100,38 @@ that reserves it is deliberate.
 
 ---
 
+## Rail geometry — squared blocks, not pills
+
+The rail is a column of **individual squared panels**. Only the column as a
+whole terminates in a curve, where it meets the header elbow above and the
+footer below.
+
+This corrects an earlier cut that gave every rail button a 50% outer radius:
+the result read as a stack of lozenges rather than a console. In the reference
+screens the left column is plainly rectangular blocks separated by the gutter,
+and the curve belongs to the frame, not to each control. An e2e assertion
+checks every `.lcars-rail-btn` computes `border-radius: 0px`.
+
+---
+
 ## Typography
 
 **Antonio** (Google Fonts, OFL) — the standard free substitute for Swiss 911
-Ultra Compressed. Self-host in `public/fonts/`; no CDN, because the kiosk must
-render its chrome with zero network dependency.
+Ultra Compressed. **Self-hosted at `public/fonts/`; no CDN**, because the kiosk
+must render its chrome with zero network dependency.
+
+Antonio ships as a **variable** font, so one file per subset covers the whole
+400–700 range the theme's weight tokens ask for — `antonio-latin.woff2` and
+`antonio-latin-ext.woff2`, 43 KB together, rather than six static cuts. The
+`@font-face` declarations live in `src/themes/lcars/lcars.css`.
+
+`font-display: block` rather than `swap`: on a 9in panel a flash of Arial
+Narrow inside an LCARS block is worse than a beat of nothing, because the
+fallback's different cap height visibly reflows every rail label.
+
+Licence retained at `public/fonts/Antonio-OFL.txt`. An e2e test fails if the
+page reaches `fonts.googleapis.com` or `fonts.gstatic.com`, or if Antonio is
+not the face actually resolved for rail labels.
 
 The family is behind a single token (`--font-body-base` in
 `src/themes/lcars/tokens.ts`) so a swap is one line. That matters: Helvetica LT

@@ -21,7 +21,8 @@ anything here. This file adds fork-specific rules on top.
 commits and actively maintained. Every upstream line we touch is a line that can
 conflict, forever.
 
-Current cost: **2 files, 3 insertions, 1 deletion.** Keep it there.
+Current cost: **2 files, 3 insertions, 1 deletion** of code, plus a
+rewritten `README.md`. Keep it there.
 
 Before editing any upstream file, ask whether a DOM attribute hook plus code in
 our own directory would do instead. It usually will — that question saved the
@@ -40,9 +41,15 @@ Log every upstream file touched in `docs/UPSTREAM-DIFF.md`.
 | Path | Contents |
 |---|---|
 | `src/themes/` | Theme engine, token contract, `default` and LCARS themes |
+| `src/themes/actions.ts` | Action registry — one source of truth for rail and voice |
+| `src/themes/sounds.ts` | Slot-based UI sound playback |
+| `public/fonts/`, `public/sounds/` | Self-hosted Antonio and LCARS UI sounds |
 | `src/voice/` | Voice sidecar client (P2) |
 | `src/context/` | Panel state snapshot for the LLM (P3) |
 | `deploy/kiosk/` | `cage` + Chromium + systemd kiosk profile |
+| `preview/lcars-preview.html` | Standalone 1280x720 mock, no build step |
+| `preview/lcars-style-guide.html` | The design system, rendered. Open it when a decision needs to be *seen* |
+| `docs/DESIGN-SYSTEM.md` | The same rules as a checklist |
 | `docs/UPSTREAM-DIFF.md` | Every upstream file touched, and why |
 | `docs/P0-PORT.md` | Token extraction procedure and acceptance criteria |
 
@@ -72,14 +79,37 @@ copying upstream's `:root` values in — that passes the screenshot diff on the
 day it is written and silently diverges the first time upstream retunes a
 colour. See `docs/P0-PORT.md` for the full argument.
 
+**`docs/DESIGN-SYSTEM.md` governs the LCARS theme.** It is the checklist;
+`preview/lcars-style-guide.html` is the reference to look at. Conformance is
+asserted in `e2e/theme-engine-p0.spec.ts` rather than left to review — the
+field lift, the elbow ratio and its carve, the type scale, square status tags,
+the absence of transitions inside the frame, and that salmon and red appear
+nowhere in the chrome at rest.
+
+Four rules from it are worth restating here, because they are the ones easiest
+to break by accident:
+
+- **The elbow is one block and one carve.** A field-coloured `::after` with its
+  own smaller radius cuts the inner corner. A plain rounded corner is not an
+  elbow, and it is the single form that identifies the language.
+- **The field is `#090909`, never pure black.** One step of lift stops an
+  emissive panel reading as a dead region.
+- **LCARS cuts, it does not fade.** No easing, no transforms, no cross-fades,
+  no hover transitions. The originals were backlit panels; a state change was a
+  lamp switching. The theme kills transitions inside the frame explicitly,
+  because upstream ships its own and they would be inherited.
+- **The gutter is the separation.** No borders or shadows on a block.
+
 **Do not repaint the signal ramp.** `--threat-*`, `--semantic-*`, `--defcon-*`
 and `--status-*` carry meaning. Recolouring `--threat-low` into a warm LCARS
 orange makes a calm reading look like an alarm — a correctness bug in a
 situational-awareness display, not a taste difference. Repaint surfaces,
 borders and the text ramp instead; unmodified upstream panels inherit those.
 
-**Salmon `#cc6666` is alert-only.** One definition, one rule. If it becomes
-decorative the theme stops communicating.
+**Salmon `#cc6666` and critical red `#ff3300` are status only.** One rule, and
+the design system's only non-negotiable. Their sole use in the whole theme is
+the `[data-wm-alert="true"]` block; the moment either appears as ornament, an
+alert stops meaning anything. There is a test.
 
 **Chrome must be losslessly removable.** A chrome slot returns its own
 teardown, and that teardown is its exact inverse — including dropping a `class`
@@ -92,9 +122,52 @@ usually not the nodes present when it unmounts. `unwrap()` moves whatever is in
 the content well back to the host; restoring a captured node list would
 re-attach detached markup and drop everything rendered since.
 
+**Token names are semantic, not literal** — `--wm-color-alert`, not
+`--wm-color-red`. A theme that renames red to blue should not have to lie. The
+one deliberate exception is LCARS's structural ramp (`tan`, `lilac`,
+`periwinkle`, `ice`, `cream`): those are *tone* names the chrome asks for by
+role, so a palette variant swaps hexes without touching a single chrome file.
+Everything that carries meaning — `alert`, `ok`, `readout`, `voice-*` — is
+named semantically.
+
+**A tokens-only theme cannot break the app.** `default` has no chrome, so if the
+LCARS frame ever breaks, switching back restores a working dashboard. Preserve
+that property: it is the safety net the whole engine rests on, and it is why
+chrome failures are caught and logged rather than rethrown.
+
+**Never write `data-theme`.** That attribute is upstream's, set before first
+paint by the prepaint script in `index.html` and read across `main.css` for
+light/dark. Ours is `data-wm-theme`. Writing the theme id into `data-theme`
+would silently clobber upstream's colour scheme.
+
 **Action strings are `namespace.verb`** (`theme.set`, `voice.ptt`,
-`panel.focus`). One registry, and the P3 voice tool schema derives from it.
-Rail buttons already carry `data-wm-action` in this form.
+`panel.focus`), optionally with a colon-suffixed argument: `panel.focus:cii`.
+One registry in `src/themes/actions.ts`, and the P3 tool schema is *generated*
+from it by `toolSchema()` — never hand-maintained beside it. That is what makes
+"every rail button action is also reachable by voice" structural rather than
+aspirational.
+
+**A rail button must name a panel upstream actually renders.** `panel.focus`
+targets are `data-panel` keys verified against a running dashboard; a button
+pointing at a key that does not exist silently does nothing, which on a wall
+panel is indistinguishable from a broken display. The refusal tone on an
+unhandled action is the other half of that guard.
+
+**Sound callers name a slot, never a file.** `wake`, `accept`, `change`,
+`deny`, `alert` — the active theme decides what each sounds like, so a second
+theme ships its own set without touching a call site.
+
+**The rail is squared blocks, not pills.** Only the column terminates in a
+curve, where it meets the header elbow and the footer.
+
+---
+
+## Conventions
+
+- TypeScript strict. No `any` in our directories.
+- Comments explain *why*. The code already says what.
+- Vanilla TS, plain DOM factories for chrome. Upstream's stack is not
+  negotiable — do not introduce a framework for this.
 
 ---
 
@@ -137,14 +210,21 @@ Two traps, both hit during P0:
 
 ## Current state
 
-P0 complete and verified. P1 not started.
+P0 and P1 are complete and verified. P2 not started.
 
-The LCARS frame is fully built: rail with working actions, header elbow, footer
-voice indicator, and the dashboard re-parented into `[data-wm-content]`.
+The LCARS theme is whole: self-hosted Antonio, vendored sounds wired by slot,
+rail bound to real panel keys, the 12-column grid with its container-query span
+ladder, and both palettes selectable.
 
-Still outstanding for P1: the **12-column panel mapping**. The rail takes 104px
-and upstream's header does not reflow, so its right-hand controls are clipped at
-1280px. Antonio and the sound assets are also not loaded yet.
+Outstanding, and deliberately so:
+
+- **`voice.ptt` reports failure.** P2 owns the sidecar; until it exists the
+  rail plays the refusal tone rather than pretending the button works.
+- **The cap-height factor (1.36) is a token, not yet applied.** It is
+  calibrated for Swiss 911, and Antonio has different vertical metrics.
+- **The kiosk profile is unverified on hardware** — the panel is unsourced.
+- **The palette choice is unmade.** It is a legibility test at 2.5 m;
+  `preview/lcars-preview.html` exists to settle it on the panel.
 
 The kiosk profile in `deploy/kiosk/` is written but **not verified on hardware**;
 the panel has not been sourced.

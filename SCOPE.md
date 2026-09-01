@@ -2,7 +2,7 @@
 
 **Working name:** LCARS World Monitor
 **Base:** fork of [koala73/worldmonitor](https://github.com/koala73/worldmonitor) (AGPL-3.0)
-**Status:** P0 complete and verified. P1 not started.
+**Status:** P0 and P1 complete and verified. P2 not started.
 
 ---
 
@@ -142,17 +142,22 @@ identical to boot. **Both verified** — `e2e/theme-engine-p0.spec.ts`.
 
 ---
 
-### P1 — LCARS theme
+### P1 — LCARS theme `COMPLETE`
 
 **Deliverables**
 
 - Antonio self-hosted in `public/fonts/`, Google Fonts `@import` removed
 - Sound assets integrated, wired to the theme's `sounds` slot
-- ~~Rail buttons bound to real panel-focus actions~~ — done; they dispatch
-  `panel.focus:<key>` on the `wm:action` bus, awaiting P3 handlers
-- Upstream panels mapped into the 12-column content grid — **outstanding**
-- Both palette variants selectable (see §7) — *shipped early as `lcars` and
-  `lcars-bright`*
+- Antonio self-hosted in `public/fonts/` — done. Variable font, two subset
+  files, 43 KB, OFL retained. No Google Fonts request at any point.
+- Sound assets integrated, wired to the theme's `sounds` slot — done. Six
+  `.ogg` vendored, played by slot through `src/themes/sounds.ts`.
+- Rail buttons bound to real panel-focus actions — done. Every `panel.focus`
+  target is a `data-panel` key verified against a running dashboard.
+- Upstream panels mapped into the 12-column content grid — done, with a
+  container-query span ladder (see note below).
+- Both palette variants selectable — `lcars` and `lcars-bright`, cycled from
+  the rail's DISPLAY button or pinned with `WM_KIOSK_THEME`.
 
 **Acceptance:** legible from 2.5 m. No text below 13px. No horizontal scroll.
 Kiosk renders with zero network dependency for chrome.
@@ -162,13 +167,31 @@ radius, not the exact hex values. Salmon `#cc6666` is alert-only — if it becom
 decorative the theme stops communicating. Full asset guidance in
 `docs/LCARS-ASSETS.md`.
 
-The frame itself is **built**: rail with working actions, header elbow, footer
-voice indicator, and the dashboard re-parented into `[data-wm-content]`. It fits
-1280x720 with no overflow in either direction.
+**The 12-column grid needs a span ladder, and the reason is measurable.**
+`.panels-grid` does not get the whole content well: in upstream's map-right
+layout `.main-content` is itself a grid, and the pinned map takes ~680px of the
+1137px well, leaving the panel grid ~449px. Twelve columns there are ~32px
+each, so a naive "plain panel = 3 columns" lands at 106px — narrow enough that
+panel titles ellipsis away to a single letter. The grid is twelve columns
+always; the *spans* adapt via a container query on the grid's own width, and
+no panel is ever squeezed below the 280px upstream declares its content needs.
 
-What remains is the **12-column panel mapping**. The rail takes 104px and
-upstream's header does not reflow, so its right-hand controls are clipped at
-1280px — visible, and the single most obvious thing still wrong with the theme.
+A container query rather than a media query because the thing that varies is
+the grid's width, not the viewport — the viewport is fixed at 1280 and never
+moves.
+
+**The rail is a column of squared blocks**, not pills. Only the column as a
+whole terminates in a curve, where it meets the header elbow above and the
+footer below. An earlier cut gave every button a 50% outer radius and read as
+a stack of lozenges rather than a console.
+
+**The theme is governed by `docs/DESIGN-SYSTEM.md`**, with
+`preview/lcars-style-guide.html` as the rendered reference. Conformance is
+asserted in the e2e suite, not left to review: the field lift, the elbow's
+2.40 : 1 ratio and its field-coloured carve, the type scale and its 13px floor,
+the rail's bottom-left code and bottom-right label, square status tags, the
+absence of transitions inside the frame, and that salmon and red appear nowhere
+in the chrome at rest.
 
 ---
 
@@ -434,7 +457,7 @@ question and outside this scope.
 
 | Risk | Impact | Mitigation | State |
 |---|---|---|---|
-| Upstream merge divergence | High | §4 fork discipline; `UPSTREAM-DIFF.md` | 2 files, 3 insertions, 1 deletion |
+| Upstream merge divergence | High | §4 fork discipline; `UPSTREAM-DIFF.md` | 2 files, 3 insertions, 1 deletion of code (plus `README.md`, resolved with `--ours`) |
 | Audio device lacks real AEC | High | §8 acceptance test before committing | Open |
 | CPU inference too slow | Medium | Measure at P2; GPU in a swarm node, not an eGPU | Open |
 | Muted palette illegible at distance | Medium | Ship both variants; decide on hardware | Both ship |
@@ -455,4 +478,7 @@ question and outside this scope.
 | `docs/VOICE-CHARACTER.md` | Phrasing table, prosody tuning, ffmpeg chain, engine comparison |
 | `docs/UPSTREAM-DIFF.md` | Every upstream file touched, and why |
 | `deploy/kiosk/README.md` | Kiosk install and operational notes |
+| `preview/lcars-preview.html` | Standalone 1280x720 mock for the on-panel palette test |
+| `preview/lcars-style-guide.html` | The design system, rendered |
+| `docs/DESIGN-SYSTEM.md` | Geometry, colour, type, components, motion — the checklist |
 | `SCOPE.md` | This document |

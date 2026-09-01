@@ -28,10 +28,16 @@ interface RailItem {
   action: string;
 }
 
+/**
+ * Rail bindings. Every `panel.focus` target is a real upstream `data-panel`
+ * key, verified against a running dashboard — a rail button pointing at a
+ * panel that does not exist would silently do nothing, which on a wall panel
+ * is indistinguishable from a broken display.
+ */
 const RAIL: RailItem[] = [
-  { id: 'brief', label: 'BRIEF', tone: 'tan', action: 'panel.focus:brief' },
-  { id: 'globe', label: 'GLOBE', tone: 'periwinkle', action: 'panel.focus:globe' },
-  { id: 'feeds', label: 'FEEDS', tone: 'tan', action: 'panel.focus:feeds' },
+  { id: 'brief', label: 'BRIEF', tone: 'tan', action: 'panel.focus:latest-brief' },
+  { id: 'globe', label: 'GLOBE', tone: 'periwinkle', action: 'map.focus' },
+  { id: 'feeds', label: 'FEEDS', tone: 'tan', action: 'panel.focus:live-news' },
   { id: 'cii', label: 'STRESS', tone: 'lilac', action: 'panel.focus:cii' },
   { id: 'markets', label: 'MARKETS', tone: 'periwinkle', action: 'panel.focus:markets' },
   { id: 'energy', label: 'ENERGY', tone: 'ice', action: 'panel.focus:energy' },
@@ -68,42 +74,69 @@ function buildRail(ctx: ChromeContext): HTMLElement {
   const rail = el('nav', 'lcars-rail');
   rail.setAttribute('aria-label', 'Panels');
 
-  // Top cap — the rail's rounded head, above the elbow.
-  rail.appendChild(el('div', 'lcars-cap lcars-cap--top'));
+  // Stub — the short block that starts the column under the header elbow.
+  rail.appendChild(el('div', 'lcars-stub'));
 
-  for (const item of RAIL) {
+  RAIL.forEach((item, index) => {
     const btn = el('button', `lcars-rail-btn lcars-tone-${item.tone}`);
     btn.type = 'button';
     btn.dataset.wmAction = item.action;
+    // Code bottom-LEFT, label bottom-RIGHT, both on the block floor. The
+    // design system is specific about this and it is what makes a rail read
+    // as instrumentation rather than a list of buttons.
     btn.appendChild(el('span', 'lcars-rail-code', code(item.id)));
     btn.appendChild(el('span', 'lcars-rail-label', item.label));
     btn.addEventListener('click', () => ctx.dispatch(item.action));
     rail.appendChild(btn);
-  }
 
-  rail.appendChild(el('div', 'lcars-cap lcars-cap--bottom'));
+    // Interrupt tab: a short contrasting block breaking a continuous rail,
+    // placed where the eye needs an anchor on a long vertical run. Eight
+    // buttons is long enough to warrant exactly one, at the midpoint.
+    if (index === Math.floor(RAIL.length / 2) - 1) {
+      const tab = el('div', 'lcars-interrupt', code(`${item.id}-tab`).slice(0, 2));
+      rail.appendChild(tab);
+    }
+  });
+
+  // Foot — fills the remainder of the column and carries the lower elbow
+  // sweep, so the rail terminates into the frame rather than just stopping.
+  rail.appendChild(el('div', 'lcars-foot'));
   return rail;
 }
 
 function buildHeader(): HTMLElement {
   const header = el('header', 'lcars-header');
+
+  // The elbow is one block plus one carve. The carve is a field-coloured
+  // pseudo-element in CSS, so nothing here needs a clip-path or an SVG.
   header.appendChild(el('div', 'lcars-elbow'));
+
+  // A labelled bar, not a bar with text on it. The label BLOCK carries the
+  // field colour and interrupts the coloured segment, punching a hole through
+  // it — the detail the design system notes most reproductions miss.
   const bar = el('div', 'lcars-header-bar');
   bar.appendChild(el('span', 'lcars-header-status', 'ONLINE'));
-  bar.appendChild(el('h1', 'lcars-header-title', 'WORLD MONITOR'));
+  bar.appendChild(el('div', 'lcars-header-seg'));
+  const title = el('h1', 'lcars-header-title', 'WORLD MONITOR');
+  bar.appendChild(title);
   header.appendChild(bar);
+
   header.appendChild(el('div', 'lcars-header-cap'));
   return header;
 }
 
 function buildFooter(): HTMLElement {
   const footer = el('footer', 'lcars-footer');
+  // Mirrors the header: a rail-width block carrying the lower elbow, then the
+  // sweep. The voice state is a STATUS TAG — square corners, deliberately the
+  // one rectangular element, which is exactly why the eye finds it.
+  footer.appendChild(el('div', 'lcars-footer-foot'));
+  const bar = el('div', 'lcars-footer-bar');
   const voice = el('div', 'lcars-voice');
   voice.dataset.voiceState = 'idle';
-  voice.appendChild(el('span', 'lcars-voice-dot'));
   voice.appendChild(el('span', 'lcars-voice-text', 'STANDING BY'));
-  footer.appendChild(voice);
-  footer.appendChild(el('div', 'lcars-footer-bar'));
+  bar.appendChild(voice);
+  footer.appendChild(bar);
   return footer;
 }
 

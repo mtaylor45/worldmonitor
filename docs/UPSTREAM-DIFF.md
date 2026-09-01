@@ -16,10 +16,35 @@ register exists to keep the surface small enough to audit before every merge.
 |---|---|---|---|
 | `src/main.ts` | +2, -0 | `import { bootThemes }` and one call before `new App('app')` | P0 |
 | `index.html` | +1, -1 | `data-wm-shell` attribute added to `<div id="app">` | P0 |
+| `README.md` | rewritten | Describes this fork rather than upstream | — |
 
-**Total: 2 files, 3 insertions, 1 deletion.** No file is reformatted,
+**Code surface: 2 files, 3 insertions, 1 deletion.** No file is reformatted,
 reorganized, or otherwise cleaned up (§4.3) — a whitespace-only change to a
 file upstream also touches converts a clean merge into a manual one.
+
+### `README.md`
+
+Rewritten to describe this fork. Upstream's README describes a hosted product
+with npm/PyPI packages, an MCP server, six live variants and commercial
+licensing — none of which this fork provides, so a reader landing here was
+being told about a different project.
+
+**This is deliberately the one upstream file we do not try to keep mergeable**,
+and it is the cheapest possible kind of conflict: when upstream edits its
+README, take ours.
+
+```bash
+git checkout --ours README.md
+```
+
+Nothing in our README needs upstream's content, so there is never a merge to
+reason about — only a choice, and it is always the same choice. Contrast
+`src/main.ts`, where a conflict genuinely has to be read.
+
+`README.zh-CN.md` and `README.ja-JP.md` are **left untouched**. They are
+upstream's translations of upstream's README, they cost nothing to carry, and
+translating a personal fork's README into two languages would be work with no
+reader.
 
 ### `src/main.ts`
 
@@ -99,30 +124,83 @@ kept locally as an ignored copy.
 | `louh/lcars` | GPL-3.0 | `src/themes/lcars/tokens.ts` | Drexler palette custom properties |
 | `louh/lcars` | GPL-3.0 | `src/themes/lcars/lcars.css` | Pill-cap radius, cap-height factor, `user-select` technique |
 | `louh/lcars` | GPL-3.0 | `src/themes/lcars/chrome.ts` | Frame composition (rail / elbow / content well), decorative four-digit control codes |
+| `louh/lcars` | GPL-3.0 | `public/sounds/*.ogg` | Six UI sounds. Licence at `public/sounds/LCARS-SOUNDS-LICENSE.txt` |
+| Antonio | OFL-1.1 | `public/fonts/antonio-*.woff2` | Self-hosted display face. Licence at `public/fonts/Antonio-OFL.txt` |
 
 GPL-3.0 is compatible with this fork's AGPL-3.0 via AGPLv3 §13; the combined
 work is AGPL. Attribution is carried in a header comment on each file above and
 recorded here. Full review in `docs/LCARS-ASSETS.md`.
 
-Sound assets (`public/sounds/*.ogg`) are **not yet vendored** — the slots are
-declared in `src/themes/lcars/index.ts` and the files land in P1. Their origin
-is unstated and they are likely show-sourced: acceptable for a personal LAN
-kiosk, and to be replaced before any public distribution.
+The sound files' origin is unstated in the source repo and they are likely
+show-sourced. Acceptable for a personal LAN kiosk; **they must be replaced
+before any public distribution.** The slot indirection in
+`src/themes/sounds.ts` means that replacement is a change of file, not of any
+call site.
 
 ---
 
-## Known consequences of the LCARS frame
+## Deliberate couplings to upstream internals
 
-The frame re-parents upstream's markup into a content well 104px narrower than
-the viewport. Upstream's header does not reflow at that width, so its
-right-hand controls (Sign In, Create account) are clipped at 1280x720.
+Neither of these modifies an upstream file, but both read upstream's internals
+and so must be re-checked after a merge.
 
-This is **not** a layout bug in the frame — the page does not overflow in either
-direction, and `.main-content` clips rather than scrolls, which is upstream's
-own behaviour. It is the 12-column panel mapping still owed by P1. Recorded
-here because it is the first thing a reviewer will notice in a screenshot.
+### The header degradation ladder
 
-Nothing about it touches an upstream file.
+`src/themes/lcars/lcars.css` re-runs upstream's own header ladder at shifted
+breakpoints.
+
+Upstream drops least-essential header items as the **viewport** narrows
+(`main.css:1094-1115`), each one "still reachable elsewhere — footer links, the
+mobile hamburger menu, or the map's own controls". The LCARS frame narrows the
+**container**, not the viewport, so that ladder never fires and upstream's
+right-hand controls (Sign In, Create account) ran off the edge of the content
+well. `.main-content` has `overflow-x: hidden`, so the failure was silent
+clipping rather than a scrollbar.
+
+Our rules fire at the viewport width where the content well crosses each of
+upstream's thresholds — upstream's number plus the 148px frame inset (rail +
+frame padding + body gap, recorded as `--wm-frame-inset`).
+
+If upstream retunes its ladder, these must be re-derived. The e2e assertion
+"upstream header fits the content well instead of being clipped" measures
+`.header` `scrollWidth` against `clientWidth` and fails if it regresses.
+
+### The 12-column panel grid
+
+`src/themes/lcars/lcars.css` restyles `.panels-grid` into a twelve-column
+module and assigns each `.panel` a whole-column span.
+
+The span ladder exists for a measured reason. `.panels-grid` does not get the
+whole content well: `.main-content` is itself a grid, and in the map-right
+layout the pinned map takes ~680px of the 1137px well, leaving the panel grid
+~449px. Twelve columns there are ~32px each, so a naive "plain panel = 3
+columns" lands at 106px and panel titles ellipsis to a single letter. The
+spans therefore adapt to the grid's own width through a container query, and
+an e2e assertion fails if any panel drops below 270px.
+
+This reads three upstream classes — `.panel`, `.span-2`, `.panel-wide` — and
+upstream's own `--dashboard-panel-row-*` tokens. It deliberately does NOT
+touch `--map-col-width`: that split is user-resizable and persisted, and
+snapping it to the module would fight a feature for a notional gain.
+
+### Killing transitions inside the frame
+
+`src/themes/lcars/lcars.css` sets `transition: none !important` on everything
+inside `.lcars-frame`.
+
+"LCARS cuts, it does not fade" is a design rule, but enforcing it needs a rule
+that reaches upstream's markup, because upstream ships transitions and skeleton
+shimmer of its own and the dashboard now renders *inside* our frame. Inheriting
+them is the most theme-breaking thing that can happen without anyone editing a
+file. Scoped to the frame and to the LCARS theme, so `default` is untouched.
+
+### `data-theme` is upstream's, not ours
+
+Our attribute is `data-wm-theme`. `data-theme` belongs to upstream: it is set
+before first paint by the prepaint script in `index.html` and read across
+`main.css` for light/dark. An early draft of the engine wrote the theme id into
+`data-theme`, which would have silently clobbered upstream's colour scheme on
+every theme switch.
 
 ---
 

@@ -71,6 +71,13 @@ export interface ThemeChrome {
   panel?: ChromeMount;
 }
 
+/**
+ * Named sound slots. A caller asks for a slot, never a filename, so the active
+ * theme owns what each event sounds like. Characters are documented in
+ * docs/VOICE-CHARACTER.md and docs/LCARS-ASSETS.md.
+ */
+export type ThemeSoundSlot = 'wake' | 'accept' | 'change' | 'deny' | 'alert';
+
 export interface DisplayTarget {
   width: number;
   height: number;
@@ -98,8 +105,8 @@ export interface Theme {
   chrome?: ThemeChrome;
   /** Resolutions this theme is tuned for. Informational; drives a warning. */
   targets?: DisplayTarget[];
-  /** Optional UI sounds, keyed by event name. LCARS beeps live here. */
-  sounds?: Record<string, string>;
+  /** Optional UI sounds, keyed by slot. LCARS beeps live here. */
+  sounds?: Partial<Record<ThemeSoundSlot, string>>;
 }
 
 /** Emitted on `document` whenever the active theme changes. */
