@@ -14,7 +14,7 @@ register exists to keep the surface small enough to audit before every merge.
 
 | File | Lines | Change | Phase |
 |---|---|---|---|
-| `src/main.ts` | +2, -0 | `import { bootThemes }` and one call before `new App('app')` | P0 |
+| `src/main.ts` | +2, -0 | `import { bootApp }` and one call before `new App('app')` | P0 |
 | `index.html` | +1, -1 | `data-wm-shell` attribute added to `<div id="app">` | P0 |
 | `README.md` | rewritten | Describes this fork rather than upstream | — |
 
@@ -50,16 +50,21 @@ reader.
 
 ```diff
  import { App } from './App';
-+import { bootThemes } from './themes';
++import { bootApp } from './boot';
 
    markLcpDebug('wm:boot:app-construct');
-+  bootThemes();
++  void bootApp();
    const app = new App('app');
 ```
 
 Placed immediately before app construction so the theme attribute and token
-stylesheet are in the document before the dashboard renders. `bootThemes()` is
-idempotent and never throws — on an unattended kiosk, an exception here would
+stylesheet are in the document before the dashboard renders.
+
+The seam calls a composition root (`src/boot.ts`) rather than the theme layer
+directly. P2 added a second subsystem, and something has to wire the two
+together without either importing the other; composing in our own file is what
+keeps the seam at two lines as more arrive. `bootApp()` is idempotent and never
+throws — on an unattended kiosk, an exception here would
 cost the whole dashboard for the sake of its colour scheme.
 
 Import added on its own line after the existing `App` import rather than merged

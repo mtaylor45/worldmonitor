@@ -44,7 +44,9 @@ Log every upstream file touched in `docs/UPSTREAM-DIFF.md`.
 | `src/themes/actions.ts` | Action registry — one source of truth for rail and voice |
 | `src/themes/sounds.ts` | Slot-based UI sound playback |
 | `public/fonts/`, `public/sounds/` | Self-hosted Antonio and LCARS UI sounds |
-| `src/voice/` | Voice sidecar client (P2) |
+| `src/voice/` | Voice sidecar client — protocol, WebSocket, indicator |
+| `voice-sidecar/` | The sidecar itself: pipeline, phrasing layer, container |
+| `src/boot.ts` | Composition root. The single upstream seam calls this |
 | `src/context/` | Panel state snapshot for the LLM (P3) |
 | `deploy/kiosk/` | `cage` + Chromium + systemd kiosk profile |
 | `preview/lcars-preview.html` | Standalone 1280x720 mock, no build step |
@@ -63,10 +65,11 @@ Two, both trivial:
 
 | File | Change |
 |---|---|
-| `src/main.ts` | `import { bootThemes }` + one call before `new App('app')` |
+| `src/main.ts` | `import { bootApp }` + one call before `new App('app')` |
 | `index.html` | `data-wm-shell` on `<div id="app">` |
 
-`bootThemes()` is idempotent and never throws. That is not defensive
+`bootApp()` composes the theme and voice layers so the seam stays two lines as
+subsystems are added. It is idempotent and never throws. That is not defensive
 programming for its own sake — this runs on an unattended wall panel, and an
 exception in the theme layer must not cost the dashboard.
 
@@ -162,6 +165,33 @@ curve, where it meets the header elbow and the footer.
 
 ---
 
+## Voice
+
+**The browser does not own the audio.** Capture, wake word, recognition and
+synthesis all live in the sidecar. Kiosk Chromium makes microphone permissions
+painful, the browser adds nothing, and a sidecar keeps voice alive across a
+dashboard reload. `src/voice/` only renders state.
+
+**The phrasing layer sits between the model and the speaker, always.** A model
+drifts back toward chattiness over a long session, and the register is most of
+what makes this read as the ship's computer. `voice-sidecar/wm_voice/phrasing.py`
+rejects and substitutes; it is pure logic and fully tested.
+
+**The wake chirp fires on detection, not on response.** It acknowledges that
+the computer is listening, and its latency is the only latency the user
+perceives — everything downstream can take a second.
+
+**`voice.ptt` reports failure when no sidecar answers**, so the rail plays the
+refusal tone. On a wall panel a silent no-op is indistinguishable from a broken
+button.
+
+**One protocol, two languages, one test.** `src/voice/protocol.ts` and
+`voice-sidecar/wm_voice/protocol.py` are twins, and a Python test parses the
+TypeScript to assert they agree. They will drift otherwise, and the symptom is
+an indicator stuck on a stale state with nothing in either log.
+
+---
+
 ## Conventions
 
 - TypeScript strict. No `any` in our directories.
@@ -210,7 +240,8 @@ Two traps, both hit during P0:
 
 ## Current state
 
-P0 and P1 are complete and verified. P2 not started.
+P0 and P1 are complete and verified. P2 is built and tested; its three
+hardware acceptance criteria remain open.
 
 The LCARS theme is whole: self-hosted Antonio, vendored sounds wired by slot,
 rail bound to real panel keys, the 12-column grid with its container-query span
@@ -218,8 +249,8 @@ ladder, and both palettes selectable.
 
 Outstanding, and deliberately so:
 
-- **`voice.ptt` reports failure.** P2 owns the sidecar; until it exists the
-  rail plays the refusal tone rather than pretending the button works.
+- **Three P2 acceptance criteria need hardware**: sub-3s latency on CPU, the
+  wake word surviving TTS playback (AEC), and no false wake in 24 hours.
 - **The cap-height factor (1.36) is a token, not yet applied.** It is
   calibrated for Swiss 911, and Antonio has different vertical metrics.
 - **The kiosk profile is unverified on hardware** — the panel is unsourced.

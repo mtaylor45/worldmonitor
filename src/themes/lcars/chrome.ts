@@ -47,6 +47,9 @@ const RAIL: RailItem[] = [
 
 const FRAME_CLASS = 'lcars-frame';
 
+/** Marks the live-transcript slot. The voice layer writes into it by attribute. */
+const TRANSCRIPT_ATTRIBUTE = 'data-wm-transcript';
+
 /**
  * LCARS screens carry four-digit codes beside every control. They're
  * decorative in canon, so we derive them from the id — stable across reloads,
@@ -132,6 +135,15 @@ function buildFooter(): HTMLElement {
   // one rectangular element, which is exactly why the eye finds it.
   footer.appendChild(el('div', 'lcars-footer-foot'));
   const bar = el('div', 'lcars-footer-bar');
+
+  // Live transcript. Sits to the LEFT of the status tag and is hidden when
+  // empty: an empty element still occupies its cell and shows the bar colour,
+  // which reads as a gap rather than as nothing.
+  const transcript = el('span', 'lcars-transcript');
+  transcript.setAttribute(TRANSCRIPT_ATTRIBUTE, '');
+  transcript.hidden = true;
+  bar.appendChild(transcript);
+
   const voice = el('div', 'lcars-voice');
   voice.dataset.voiceState = 'idle';
   voice.appendChild(el('span', 'lcars-voice-text', 'STANDING BY'));

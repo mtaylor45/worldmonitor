@@ -2,7 +2,8 @@
 
 **Working name:** LCARS World Monitor
 **Base:** fork of [koala73/worldmonitor](https://github.com/koala73/worldmonitor) (AGPL-3.0)
-**Status:** P0 and P1 complete and verified. P2 not started.
+**Status:** P0 and P1 complete and verified. P2 built; three acceptance
+criteria are hardware measurements and remain open.
 
 ---
 
@@ -195,7 +196,7 @@ in the chrome at rest.
 
 ---
 
-### P2 — Voice, read-only
+### P2 — Voice, read-only `BUILT, PENDING HARDWARE`
 
 **Deliverables**
 

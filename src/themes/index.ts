@@ -7,10 +7,11 @@
  */
 
 import { DEFAULT_THEME_ID, themes } from './engine';
-import { createActions, installActions, type ActionRouter } from './actions';
+import { createActions, installActions, type ActionRouter, type VoicePort } from './actions';
 import { createSoundPlayer, type SoundPlayer } from './sounds';
 import { defaultTheme } from './default';
 import { lcars, lcarsBright } from './lcars';
+import type { ThemeSoundSlot } from './types';
 
 export {
   CONTENT_ATTRIBUTE,
@@ -24,6 +25,8 @@ export {
   themes,
 } from './engine';
 export { ACTION_EVENT, THEME_CHANGE_EVENT } from './types';
+export type { ThemeSoundSlot } from './types';
+export type { VoicePort } from './actions';
 export {
   FOCUS_ATTRIBUTE,
   createActions,
@@ -89,7 +92,7 @@ function themeFromUrl(): string | null {
  * unattended kiosk, where an exception here would cost the whole dashboard for
  * the sake of its colour scheme.
  */
-export function bootThemes(): Promise<void> {
+export function bootThemes(options: { voice?: VoicePort } = {}): Promise<void> {
   if (booted) return Promise.resolve();
   booted = true;
 
@@ -100,15 +103,18 @@ export function bootThemes(): Promise<void> {
     themes.onChange((theme) => sounds?.load(theme));
 
     router = installActions(
-      createActions({
-        set: (id) => void themes.apply(id),
-        cycle: () => {
-          const all = themes.list();
-          const i = all.findIndex((t) => t.id === themes.current?.id);
-          void themes.apply(all[(i + 1) % all.length]?.id ?? DEFAULT_THEME_ID);
+      createActions(
+        {
+          set: (id) => void themes.apply(id),
+          cycle: () => {
+            const all = themes.list();
+            const i = all.findIndex((t) => t.id === themes.current?.id);
+            void themes.apply(all[(i + 1) % all.length]?.id ?? DEFAULT_THEME_ID);
+          },
+          ids: () => themes.list().map((t) => t.id),
         },
-        ids: () => themes.list().map((t) => t.id),
-      }),
+        options.voice,
+      ),
       // Audible outcome for every dispatch: the refusal tone on a command that
       // could not be carried out is what stops a dead rail button reading as a
       // broken panel.
@@ -126,6 +132,17 @@ export function bootThemes(): Promise<void> {
     console.warn('[wm-themes] boot failed, staying on upstream default:', error);
     return Promise.resolve();
   }
+}
+
+/**
+ * Plays a themed sound slot.
+ *
+ * Exported so the voice layer can sound the wake chirp without owning any
+ * audio assets: the caller names a slot, the active theme decides what it
+ * sounds like.
+ */
+export function playSound(slot: ThemeSoundSlot): void {
+  sounds?.play(slot);
 }
 
 /** The action router, once `bootThemes()` has run. P3's tool executor uses it. */

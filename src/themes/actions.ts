@@ -94,11 +94,20 @@ function focusMap(doc: Document = document): boolean {
  * Theme actions are injected rather than imported so this module stays free of
  * a cycle with `index.ts`, which imports it.
  */
-export function createActions(theme: {
-  set(id: string): void;
-  cycle(): void;
-  ids(): string[];
-}): ActionDefinition[] {
+/** The voice layer's surface, as the action registry needs it. */
+export interface VoicePort {
+  ptt(): boolean;
+  readonly connected: boolean;
+}
+
+export function createActions(
+  theme: {
+    set(id: string): void;
+    cycle(): void;
+    ids(): string[];
+  },
+  voice?: VoicePort,
+): ActionDefinition[] {
   return [
     {
       action: 'panel.focus',
@@ -140,10 +149,11 @@ export function createActions(theme: {
     {
       action: 'voice.ptt',
       summary: 'Start push-to-talk listening.',
-      // P2 owns the sidecar. Until it exists this reports failure rather than
-      // pretending: the rail plays the refusal tone, which is the honest
-      // feedback for a button whose backend is not built yet.
-      run: () => false,
+      // Reports failure when there is no sidecar to talk to, rather than
+      // pretending: the rail then plays the refusal tone, which is the honest
+      // feedback for a button whose backend is not up. A wall panel gives no
+      // other signal that voice is unavailable.
+      run: () => voice?.ptt() ?? false,
     },
   ];
 }

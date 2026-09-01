@@ -1,0 +1,7 @@
+# Python bytecode and local virtualenvs. The repo root's .gitignore is
+# upstream's and covers a JS project; this keeps our Python tree out of it
+# rather than adding fork-specific rules to an upstream file.
+__pycache__/
+*.py[cod]
+.venv/
+venv/

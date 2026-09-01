@@ -41,7 +41,7 @@ The whole project follows from one idea:
 | Design-system conformance | 🟢 Asserted in CI |
 | Kiosk deployment configuration | 🟡 Written / hardware verification pending |
 | Palette choice | 🟡 Awaiting the physical panel |
-| Local voice assistant | ⚪ Planned |
+| Local voice assistant | 🟡 Built / hardware verification pending |
 | Voice commands | ⚪ Planned |
 | Proactive alerts | ⚪ Planned |
 | Home-lab telemetry | ⚪ Planned |
@@ -339,7 +339,11 @@ worldmonitor/
 │   │   ├── default/         identity theme
 │   │   └── lcars/           tokens, chrome, stylesheet
 │   │
-│   ├── voice/               local voice integration            (P2)
+│   ├── voice/
+│   │   ├── protocol.ts      wire protocol (twin of the sidecar's)
+│   │   ├── client.ts        WebSocket client, reconnect, degradation
+│   │   └── index.ts         indicator, transcript, chirp wiring
+│   │
 │   └── context/             structured dashboard context       (P3)
 │
 ├── public/
@@ -352,6 +356,16 @@ worldmonitor/
 ├── preview/
 │   ├── lcars-style-guide.html   the design system, rendered
 │   └── lcars-preview.html       1280×720 mock, palette toggle
+│
+├── voice-sidecar/           local voice assistant (container)
+│   ├── wm_voice/
+│   │   ├── phrasing.py      the register: validator, templates, numerals
+│   │   ├── pipeline.py      turn orchestration and the latency budget
+│   │   ├── protocol.py      wire protocol, mirrored in src/voice/
+│   │   ├── server.py        WebSocket fan-out, push-to-talk
+│   │   ├── adapters.py      wake / STT / LLM / TTS / audio
+│   │   └── signal_chain.py  post-TTS ffmpeg chain
+│   └── tests/
 │
 ├── e2e/                     theme and acceptance tests
 │
@@ -366,8 +380,7 @@ worldmonitor/
 └── SCOPE.md
 ```
 
-`src/voice/` and `src/context/` represent planned P2/P3 architecture and are not
-yet populated.
+`src/context/` represents planned P3 architecture and is not yet populated.
 
 ---
 
@@ -476,8 +489,11 @@ npx vitest run --config vitest.dom.config.mts tests/dom/theme-engine.test.mts
 npx vitest run --config vitest.dom.config.mts tests/dom/theme-token-contract.test.mts
 
 # Acceptance: pixel fidelity, cycle stability, persistence, assets,
-# 12-column grid, kiosk geometry, design-system conformance
+# 12-column grid, kiosk geometry, design-system conformance, voice wiring
 npx playwright test e2e/theme-engine-p0.spec.ts
+
+# Voice sidecar - standard library only, no pytest to install
+cd voice-sidecar && python3 -m unittest discover -s tests -t .
 ```
 
 Run all three after every upstream merge. The token test catches upstream
@@ -520,7 +536,7 @@ font, sound integration, both palettes, rail actions bound to real panel keys,
 dashboard content integration, the 12-column panel mapping, and 1280×720
 composition with no overflow in either direction.
 
-### P2 — Voice, read-only · planned
+### P2 — Voice, read-only · built, pending hardware
 
 ```
 openWakeWord → faster-whisper → Ollama → TTS
@@ -529,7 +545,15 @@ openWakeWord → faster-whisper → Ollama → TTS
 Wake word, push-to-talk, live transcript, voice-state indicator, local
 inference, LCARS audio feedback, structured dashboard questions.
 
-**Target: under 3 seconds** from end-of-speech to first audio, on CPU.
+The sidecar and the frontend client are written and tested: `voice-sidecar/`
+holds the pipeline, the phrasing layer and the container; `src/voice/` holds
+the WebSocket client, the state indicator and the transcript. The rail's LISTEN
+button drives real push-to-talk, and refuses audibly when no sidecar answers.
+
+**Three acceptance criteria are hardware measurements and remain open:** under
+3 seconds from end-of-speech to first audio on CPU, the wake word surviving the
+assistant's own TTS playback (the AEC test), and no false wake in 24 hours of
+room noise. See `voice-sidecar/README.md`.
 
 ### P3 — Voice commands · planned
 
@@ -610,6 +634,7 @@ superseded by anything here.
 | [`docs/P0-PORT.md`](docs/P0-PORT.md) | Default-theme extraction and acceptance criteria |
 | [`docs/UPSTREAM-DIFF.md`](docs/UPSTREAM-DIFF.md) | Every upstream file touched, and why |
 | [`deploy/kiosk/README.md`](deploy/kiosk/README.md) | Kiosk install and operational notes |
+| [`voice-sidecar/README.md`](voice-sidecar/README.md) | Voice sidecar: run, configure, and what only hardware can verify |
 
 ---
 

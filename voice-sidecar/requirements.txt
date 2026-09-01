@@ -1,0 +1,12 @@
+# Pinned because a kiosk that rebuilds itself into a different model version at
+# 3am is worse than one that never rebuilds.
+openwakeword==0.6.0
+faster-whisper==1.1.1
+kokoro==0.9.4
+soundfile==0.13.1
+sounddevice==0.5.1
+numpy==2.2.3
+websockets==14.2
+
+# Ollama is reached over plain HTTP with urllib. One POST to localhost does not
+# justify a client library on an image that has to stay small.

@@ -582,6 +582,56 @@ test.describe('Design system conformance', () => {
   });
 });
 
+test.describe('P2 — voice layer', () => {
+  test('renders the indicator and transcript slot, and degrades with no sidecar', async ({
+    page,
+  }) => {
+    // The sidecar is not deployed. This is the state the panel is in until the
+    // hardware exists, and the dashboard must be indistinguishable from one
+    // without a voice layer at all.
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    await expect(page.locator('.lcars-voice')).toHaveAttribute('data-voice-state', 'idle');
+    await expect(page.locator('.lcars-voice')).toHaveText('STANDING BY');
+
+    const transcript = page.locator('[data-wm-transcript]');
+    await expect(transcript).toHaveCount(1);
+    // Hidden rather than empty: an empty element still shows the bar colour.
+    await expect(transcript).toBeHidden();
+
+    // No overflow introduced by the footer additions.
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
+
+  test('the LISTEN button refuses audibly rather than doing nothing', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // With no sidecar, `voice.ptt` must report failure so the rail plays the
+    // refusal tone. A silent no-op on a wall panel is indistinguishable from a
+    // broken button.
+    const handled = await page.evaluate(async () => {
+      const { getActionRouter } = await import('/src/themes/index.ts');
+      return getActionRouter()?.handle('voice.ptt') ?? null;
+    });
+
+    expect(handled).toBe(false);
+  });
+
+  test('exposes voice.ptt in the generated P3 tool schema', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const names = await page.evaluate(async () => {
+      const { getActionRouter } = await import('/src/themes/index.ts');
+      return (getActionRouter()?.toolSchema() ?? []).map((t) => t.name);
+    });
+
+    expect(names).toContain('voice_ptt');
+  });
+});
+
 test.describe('P0 — kiosk geometry', () => {
   test('neither theme overflows the 1280x720 panel horizontally', async ({ page }) => {
     for (const theme of ['default', 'lcars', 'lcars-bright']) {

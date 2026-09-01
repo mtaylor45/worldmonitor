@@ -1,0 +1,32 @@
+# Sidecar plus Ollama, as deployed on the kiosk.
+#
+#   docker compose -f voice-sidecar/docker-compose.yml up -d
+#
+# Host networking throughout: the dashboard, Ollama and the sidecar are all on
+# the same machine, and bridging them would add a hop for no isolation benefit
+# on a single-user LAN appliance.
+services:
+  voice:
+    build: .
+    network_mode: host
+    devices:
+      - /dev/snd:/dev/snd
+    volumes:
+      - wm-voice-models:/models
+    environment:
+      WM_OLLAMA_URL: http://127.0.0.1:11434
+      WM_OLLAMA_MODEL: qwen2.5:7b-instruct
+      WM_STT_MODEL: small.en
+      WM_TTS_VOICE: af_sarah
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    network_mode: host
+    volumes:
+      - wm-ollama:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  wm-voice-models:
+  wm-ollama:

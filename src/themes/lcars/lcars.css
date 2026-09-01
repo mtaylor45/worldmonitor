@@ -342,10 +342,38 @@
   border-radius: 0;
 }
 
-/* P2 drives this attribute from the sidecar's WebSocket state. Defining all
-   three now keeps the visual contract in one place. */
+/* Driven by the sidecar's WebSocket state (src/voice/). `thinking` covers the
+   window between end-of-speech and first audio, which is up to three seconds
+   on this hardware — showing LISTENING through it is a lie, and showing
+   nothing reads as a hang. */
 .lcars-voice[data-voice-state='listening'] { background: var(--wm-color-voice-listening); }
+.lcars-voice[data-voice-state='thinking'] { background: var(--wm-color-readout); }
 .lcars-voice[data-voice-state='speaking'] { background: var(--wm-color-voice-speaking); }
+
+/* Live transcript, to the left of the status tag. Field-coloured so it reads
+   as text punched through the footer bar rather than sitting on top of it —
+   the same labelled-bar technique as the header. */
+.lcars-transcript {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-right: var(--wm-space-gutter);
+  padding: 0 12px;
+  background: var(--wm-color-bg);
+  color: var(--wm-color-ice);
+  font-size: var(--wm-font-size-label);
+  letter-spacing: var(--wm-font-tracking-label);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  /* A long utterance truncates from the LEFT, so the most recent words stay
+     visible — a transcript that scrolls off to the right shows the beginning
+     of a sentence nobody is still waiting to read. */
+  direction: rtl;
+  text-overflow: ellipsis;
+}
 
 /* ---------- Panels: the 12-column content grid ----------
 
