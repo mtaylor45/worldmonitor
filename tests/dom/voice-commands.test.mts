@@ -76,8 +76,19 @@ describe('dashboard snapshot', () => {
     expect(JSON.stringify(snapshot)).not.toContain('<');
   });
 
-  it('lifts headline readings out of a panel', () => {
+  it('omits panel readings by default', () => {
+    // Data belongs in tool results, not in every prompt. Pushing every panel's
+    // numbers into every turn costs prompt-processing time on a CPU for data
+    // the model usually does not need, and grows without bound as panels are
+    // added. The model asks for a reading with a tool.
     const snapshot = buildSnapshot();
+    expect(snapshot.panels[0]?.readings).toBeUndefined();
+    expect(JSON.stringify(snapshot)).not.toContain('87');
+  });
+
+  it('can still include readings when explicitly asked', () => {
+    // The escape hatch, for a self-contained snapshot while debugging.
+    const snapshot = buildSnapshot({ includeReadings: true });
     expect(Object.values(snapshot.panels[0]?.readings ?? {})).toContain('87');
   });
 
@@ -155,9 +166,35 @@ describe('context publisher', () => {
     });
 
     publisher.publish();
-    document.querySelector('.panel-count')!.textContent = '92';
+    // A panel appearing changes the vocabulary, so it is worth re-sending.
+    // A *reading* changing is not: readings are not in the snapshot at all.
+    const panel = document.createElement('div');
+    panel.className = 'panel';
+    panel.setAttribute(PANEL_ATTRIBUTE, 'energy');
+    document.querySelector('.panels-grid')!.appendChild(panel);
+
     expect(publisher.publish()).toBe(true);
     expect(sent).toHaveLength(2);
+  });
+
+  it('does not re-send when only a reading changed', () => {
+    // The dashboard repaints constantly. Now that readings live in tools
+    // rather than the snapshot, a number ticking over is not a context change.
+    const sent: unknown[] = [];
+    const publisher = startContextPublisher({
+      send: (s) => {
+        sent.push(s);
+        return true;
+      },
+      actions: () => ['panel.focus'],
+      setIntervalFn: () => 0,
+      clearIntervalFn: () => undefined,
+    });
+
+    publisher.publish();
+    document.querySelector('.panel-count')!.textContent = '92';
+    expect(publisher.publish()).toBe(false);
+    expect(sent).toHaveLength(1);
   });
 
   it('retries a snapshot that could not be sent', () => {

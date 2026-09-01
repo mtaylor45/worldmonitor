@@ -126,7 +126,7 @@ class TurnGuard(unittest.TestCase):
 
         sidecar = Sidecar(SlowPipeline(), events)  # type: ignore[arg-type]
         # Capture is the one part that genuinely needs a microphone.
-        sidecar._capture = lambda seconds: _immediate(b"audio")  # type: ignore[assignment]
+        sidecar._capture = lambda: _immediate(b"audio")  # type: ignore[assignment]
         return sidecar, started, events
 
     def test_a_second_press_while_a_turn_runs_is_ignored(self) -> None:
@@ -135,8 +135,8 @@ class TurnGuard(unittest.TestCase):
         # two wrong answers.
         async def scenario() -> list[str]:
             sidecar, started, _ = self.build()
-            await sidecar.start_turn(capture_seconds=0.0)
-            await sidecar.start_turn(capture_seconds=0.0)
+            await sidecar.start_turn()
+            await sidecar.start_turn()
             await asyncio.sleep(0.1)
             return started
 
@@ -145,9 +145,9 @@ class TurnGuard(unittest.TestCase):
     def test_a_turn_can_start_once_the_previous_one_finished(self) -> None:
         async def scenario() -> list[str]:
             sidecar, started, _ = self.build()
-            await sidecar.start_turn(capture_seconds=0.0)
+            await sidecar.start_turn()
             await asyncio.sleep(0.1)
-            await sidecar.start_turn(capture_seconds=0.0)
+            await sidecar.start_turn()
             await asyncio.sleep(0.1)
             return started
 
@@ -158,7 +158,7 @@ class TurnGuard(unittest.TestCase):
             sidecar, _, events = self.build()
             socket = FakeSocket()
             events.add(socket)
-            await sidecar.start_turn(capture_seconds=0.0)
+            await sidecar.start_turn()
             await sidecar.cancel()
             return [json.loads(f)["state"] for f in socket.sent if "state" in json.loads(f)]
 

@@ -15,12 +15,15 @@ stage, so a regression names the stage that caused it instead of a total.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Protocol
 
 from .commands import Command, interpret
 from .phrasing import TEMPLATES, enforce, speakable
+from .router import Tier, route
+from .tools import ToolRegistry
 
 # SCOPE.md §5 P2. Measured from end-of-speech to the first audio sample.
 LATENCY_BUDGET_S = 3.0
@@ -65,6 +68,10 @@ class Turn:
     #: The action dispatched, if any. P3.
     action: str | None = None
     argument: str | None = None
+    #: Which tier handled this turn: direct, fast or full.
+    tier: str = "full"
+    #: A data tool that ran, if any.
+    tool: str | None = None
     #: Why an action the model asked for was refused.
     refusals: list[str] = field(default_factory=list)
 
@@ -90,7 +97,11 @@ class Pipeline:
         events: Events,
         *,
         clock: Callable[[], float] = time.monotonic,
+        tools: ToolRegistry | None = None,
+        fast_model: bool = False,
     ) -> None:
+        self._tools = tools
+        self._fast_model = fast_model
         self._stt = stt
         self._llm = llm
         self._tts = tts
@@ -106,6 +117,8 @@ class Pipeline:
     def update_snapshot(self, snapshot: dict[str, object]) -> None:
         """Replaces the dashboard context the model reasons over."""
         self._snapshot = snapshot
+        if self._tools is not None:
+            self._tools.update(snapshot)
 
     async def on_wake(self, confidence: float | None = None) -> None:
         """Wake word fired.
@@ -136,10 +149,46 @@ class Pipeline:
                 return turn
 
             await self._events.transcript(turn.transcript, True)
+
+            # Tier 0: a command the router recognises outright. No model, no
+            # network - and on this CPU the model IS the latency budget, so
+            # the most valuable thing the pipeline does is skip it. A wall
+            # panel gets "show the map" far more often than it gets a
+            # geopolitical question.
+            decision = route(turn.transcript, self._snapshot, fast_model=self._fast_model)
+            turn.tier = decision.tier.name.lower()
+            if decision.tier is Tier.DIRECT:
+                if decision.action:
+                    turn.action, turn.argument = decision.action, decision.argument
+                    await self._events.response(decision.speech or TEMPLATES["acknowledged"])
+                    await self._events.action(decision.action, decision.argument)
+                    turn.spoken = decision.speech or TEMPLATES["acknowledged"]
+                    turn.ok = True
+                    await self._speak(turn)
+                return turn
+
             await self._events.state("thinking")
 
             async with _stage(turn, "llm", self._clock):
                 candidate = await self._llm.answer(turn.transcript, self._snapshot)
+
+            # A data tool: run it, then ask again with the result. One round
+            # only - a second would double the model cost, and on this hardware
+            # that is the difference between a pause and a hang.
+            probe = interpret(candidate, self._snapshot)
+            if probe.needs_tool and self._tools is not None:
+                async with _stage(turn, "tool", self._clock):
+                    ok, result = await self._tools.call(probe.tool or "", probe.tool_arguments)
+                turn.tool = probe.tool
+                if ok:
+                    async with _stage(turn, "llm2", self._clock):
+                        candidate = await self._llm.answer(
+                            turn.transcript + "\n\nTool result: " + json.dumps(result),
+                            self._snapshot,
+                        )
+                else:
+                    turn.refusals.append("tool " + str(probe.tool) + " failed: " + str(result))
+                    candidate = json.dumps({"speech": TEMPLATES["unavailable"]})
 
             # The deterministic boundary. The model produces JSON naming an
             # action; `interpret` checks it against the registry and the panel
@@ -148,7 +197,10 @@ class Pipeline:
             command: Command = interpret(candidate, self._snapshot)
             turn.action = command.action
             turn.argument = command.argument
-            turn.refusals = command.refusals
+            # Extended, not replaced: a tool failure recorded above is the
+            # reason this turn went the way it did, and assigning over it would
+            # leave the log saying only that the model declined to act.
+            turn.refusals.extend(command.refusals)
 
             # The phrasing layer sits between the model and the speaker, always.
             # A model drifts back toward chattiness over a long session, and the
@@ -183,6 +235,15 @@ class Pipeline:
             await self._events.state("idle")
 
         return turn
+
+
+    async def _speak(self, turn: "Turn") -> None:
+        """Synthesises and plays a turn's response. Used by the tier-0 path."""
+        async with _stage(turn, "tts", self._clock):
+            wav = await self._tts.synthesize(speakable(turn.spoken))
+        await self._events.state("speaking")
+        async with _stage(turn, "play", self._clock):
+            await self._audio.play(wav)
 
 
 class _stage:

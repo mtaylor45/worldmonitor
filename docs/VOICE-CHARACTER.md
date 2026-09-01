@@ -173,7 +173,36 @@ playback can start on the first sentence.
 STT is faster-whisper `small.en` int8 (MIT); `small.en` over `base.en` because
 the accuracy gain on place names is worth the latency on a 4-core Skylake. Wake
 word is openWakeWord (Apache-2.0) with a custom "Computer" model. The LLM is
-Ollama, 2–4B class. **Tool calling is not required** — see below.
+**Qwen3 8B Q4_K_M on llama.cpp, non-thinking** — see below.
+
+### On the model, tool calling, and the latency budget
+
+An early draft made native tool calling a hard requirement, then a later one
+rejected it outright. Both were wrong in the same way: they treated a transport
+as an architecture.
+
+**Qwen3 8B Q4_K_M.** Q4_K_M because CPU decode on the NUC is memory-bandwidth
+bound at ~34 GB/s — a Q4_K_M 8B is ~4.9 GB of weights, so the decode ceiling is
+roughly 4–5 tok/s even at generous efficiency. Q8 would move twice the bytes per
+token for quality this workload does not need.
+
+**Non-thinking mode matters more than the quant.** A chain of thought the user
+never hears is latency spent on nothing, and turning it off is the single
+biggest per-turn saving available.
+
+**Tool calling is used where the model has it, and validated regardless.** A
+native call and a constrained-JSON object are normalised into the same shape and
+checked against the same registry, so the boundary does not depend on how the
+model was asked. That property is what matters, and it is why the earlier
+"never use tool calling" position was overcorrecting.
+
+**The three-second budget applies to tier 0, not to everything.** At ~4 tok/s an
+8B spends about ten seconds on a forty-token reply, and a tool-calling turn is
+two passes. Rather than pretend, the budget is split: pattern-matched commands
+answer in under a second with no model at all; briefings take 8–12 s and say
+"Working." while they run. `voice-sidecar/README.md` carries the table.
+
+**Measure on CPU before making any GPU decision.**
 
 ### Audition protocol
 

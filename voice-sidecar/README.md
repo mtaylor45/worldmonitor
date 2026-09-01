@@ -47,7 +47,17 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | `WM_WAKE_THRESHOLD` | `0.5` | Tune against the 24-hour false-wake test |
 | `WM_STT_MODEL` | `small.en` | `small.en` over `base.en`: the accuracy gain on place names is worth the latency, and place names are most of what gets asked |
 | `WM_STT_COMPUTE` | `int8` | |
-| `WM_OLLAMA_MODEL` | `gemma3n:e2b` | Tool calling **not** required — see below |
+| `WM_LLM_URL` | `http://127.0.0.1:8080/v1` | llama.cpp `llama-server`. Ollama works too: point at `:11434/v1` |
+| `WM_LLM_MODEL` | `qwen3-8b-q4_k_m` | See the model note below |
+| `WM_LLM_THINKING` | `0` | Qwen3 non-thinking mode. The biggest per-turn saving available |
+| `WM_LLM_CONTEXT` | `8192` | Every unused token of context is prompt-processing time |
+| `WM_LLM_THREADS` | `8` | Benchmark 6 against 8 — hyperthreads can cost more than they return |
+| `WM_FAST_MODEL` | *(empty)* | Optional tier-1 model. Off by default; measure first |
+| `WM_API_URL` | `http://127.0.0.1:3000` | Where the data tools fetch from |
+| `WM_VAD_THRESHOLD` | `350` | RMS gate for endpointing |
+| `WM_SILENCE_TAIL` | `0.8` | Quiet after speech that ends the utterance |
+| `WM_LEAD_IN` | `2.5` | Grace before speech starts |
+| `WM_MAX_UTTERANCE` | `12` | Backstop for a room that never goes quiet |
 | `WM_TTS_ENGINE` | `kokoro` | Piper if CPU latency disappoints |
 | `WM_TTS_VOICE` | `af_sarah` | Audition on the panel, not in headphones |
 | `WM_SIGNAL_CHAIN` | `1` | `0` to hear a raw voice against a processed one |
@@ -57,7 +67,9 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | File | Contents |
 |---|---|
 | `phrasing.py` | The register: validator, templates, numerals. **Layer 1** |
-| `commands.py` | P3's boundary: the JSON contract, the prompt, and the validator |
+| `commands.py` | P3's boundary: the contract, the prompt, and the validator |
+| `router.py` | Intent tiers. Tier 0 answers without a model at all |
+| `tools.py` | Tool registry: UI tools dispatched, data tools fetched |
 | `pipeline.py` | Turn orchestration and the latency budget |
 | `protocol.py` | Wire protocol, mirrored in `src/voice/protocol.ts` |
 | `server.py` | WebSocket fan-out, push-to-talk, turn guard |
@@ -65,39 +77,91 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | `signal_chain.py` | Post-TTS ffmpeg chain. **Layer 4** |
 | `config.py` | Environment configuration |
 
-## Commands, and why not tool calling
+## The model, and the latency arithmetic
 
-P3 turns speech into a validated action:
+**Qwen3 8B Q4_K_M on llama.cpp**, non-thinking, with native tool calling.
+
+Q4_K_M rather than a higher quant because CPU decode here is memory-bandwidth
+bound. The NUC6i7KYK has ~34 GB/s; a Q4_K_M 8B is about 4.9 GB of weights, so
+even at a generous 70% of theoretical bandwidth the decode ceiling is roughly
+4–5 tok/s. Q8 moves twice the bytes per token for quality this workload does
+not need.
+
+That arithmetic has a consequence worth stating plainly:
+
+> **An 8B cannot meet a three-second end-to-end budget on this CPU for a
+> conversational answer.** At ~4 tok/s a forty-token reply is ~10 s of decode.
+> A tool-calling turn is two model passes, so worse.
+
+So the budget is split rather than pretended at:
+
+| Tier | Handles | Model | Target |
+|---|---|---|---|
+| 0 · direct | "show the map", "focus markets", "change the theme" | **none** | **< 1 s** |
+| 1 · fast | short conversational replies | 1.7B *(optional)* | < 3 s |
+| 2 · full | questions, briefings, multi-step | 8B + tools | **8–12 s** |
+
+Tier 0 is not a fallback for a broken model — it is the fast path for the
+commands people actually repeat, and it is where the responsiveness comes from.
+A wall panel gets "show the map" far more often than it gets a geopolitical
+question, and none of those should wake an 8B.
+
+Tier 1 is configured but **off by default**. A second resident model costs RAM
+and another thing to keep loaded, and it only pays off once tier 0's coverage
+stops growing. `WM_FAST_MODEL` enables it; measure before you do.
+
+Tier 2 is where a briefing lives, and 8–12 s is acceptable there because the
+user asked for a synthesis and the assistant says "Working." while it runs.
+Pretending that fits in three seconds would just mean shipping something that
+misses its own target on every interesting question.
+
+## Tools, and both transports
 
 ```text
-user speech -> model -> JSON -> validated action -> wm:action -> dashboard
+user speech -> router -> model -> tool or action -> validated -> dashboard
 ```
 
-The model emits a JSON object naming an action; `commands.py` checks it against
-the registry and the panel list and refuses anything it cannot verify; the
-dashboard checks it **again** before dispatching. Two independent validations,
-because the thing being validated is a language model's output.
+Two kinds of tool:
 
-Ollama's tool-calling API is deliberately unused, for two reasons.
+- **UI tools** (`focus_panel`, `focus_map`, `cycle_theme`) are *dispatched* to
+  the dashboard, never executed here. The sidecar validates the name and
+  argument; the dashboard validates them again before anything happens.
+- **Data tools** (`get_region_status`, `get_country_risk`, `get_market_quotes`,
+  `get_cyber_threats`, `get_region_brief`) call World Monitor's own HTTP API
+  and return a trimmed result.
 
-The practical one: tool-calling models start around 7B, and on the NUC's
-i7-6770HQ a 7B at roughly 3–5 tok/s spends four to seven seconds on a
-twenty-token reply — over the three-second budget before anything else has run.
-Gemma 3n E2B is several times faster, and has no native tool calling.
+Every data tool is bound to an endpoint that exists. The paths were read out of
+`proto/worldmonitor/**/service.proto` and their `sebuf.http.config`
+annotations — the same discipline as "a rail button must name a panel upstream
+actually renders". A tool that returns nothing is worse than an absent one,
+because the model will keep choosing it.
 
-The architectural one, which matters more: tool calling hands the model a
-mechanism that *looks* like it performs actions. What is wanted is a model that
-describes an intention, checked against a registry it cannot influence. A JSON
-contract plus a validator is that boundary stated plainly, and it works on any
-model rather than a shortlist.
+**Native tool calling is used where the model has it, and it is not a reversal
+of the JSON-contract design.** Both are transports for the same claim: the
+model names a tool and its arguments, and the registry validates that claim
+against a list it cannot influence. `interpret()` normalises a native call and
+a JSON object into the same shape and applies the same checks, so the guarantee
+does not depend on how the model was asked. A test asserts the two paths reach
+identical verdicts.
 
-Constrained decoding (`format` given `RESPONSE_SCHEMA`) makes the shape
-reliable. The validator assumes it can still be violated, because one that
-trusts its input is not a validator.
+**The dashboard state is not dumped into the prompt.** The snapshot carries the
+*vocabulary* — which panels exist, which actions are available — and nothing
+else. Readings come from tools. Pushing every panel's numbers into every turn
+costs prompt-processing time for data the model usually does not need, and
+grows without bound as panels are added.
 
-If command interpretation disappoints, try **E4B** before reaching for a 7B.
-Latency headroom is what makes the assistant feel responsive, and a larger
-model spends it first.
+## Capture: endpointing, not a fixed window
+
+Recording stops when the speaker does. This replaced a fixed six-second window,
+which was the single largest latency defect in the pipeline: every turn waited
+six seconds before recognition could begin, spending twice the entire budget on
+silence after a two-word command.
+
+`WM_SILENCE_TAIL` ends the utterance; `WM_LEAD_IN` is a longer grace before
+speech starts, because a user who just pressed LISTEN is still drawing breath.
+The gate is RMS rather than a neural VAD — it costs nothing, and the microphone
+here is a near-field conferencing unit. Swap in Silero if the room proves
+noisier than the gate can handle.
 
 ## Measuring latency on hardware
 

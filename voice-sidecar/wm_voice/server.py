@@ -68,6 +68,7 @@ class Sidecar:
     """Owns the pipeline, the microphone loop, and the socket server."""
 
     def __init__(self, pipeline: Pipeline, events: Broadcast, config: Config = CONFIG) -> None:
+        self._config = config
         self._pipeline = pipeline
         self._events = events
         self._config = config
@@ -93,7 +94,7 @@ class Sidecar:
     async def _on_message(self, message: dict[str, object]) -> None:
         kind = message.get("type")
         if kind == "ptt" and message.get("pressed"):
-            await self.start_turn(capture_seconds=6.0)
+            await self.start_turn()
         elif kind == "cancel":
             await self.cancel()
         elif kind == "context":
@@ -104,7 +105,7 @@ class Sidecar:
                 # whichever published most recently is as good as any.
                 self._pipeline.update_snapshot(snapshot)
 
-    async def start_turn(self, *, capture_seconds: float) -> None:
+    async def start_turn(self) -> None:
         """Records, then runs one turn.
 
         Refuses to start a second turn while one is running: on a wall panel a
@@ -113,11 +114,11 @@ class Sidecar:
         """
         if self._turn and not self._turn.done():
             return
-        self._turn = asyncio.create_task(self._run(capture_seconds))
+        self._turn = asyncio.create_task(self._run())
 
-    async def _run(self, capture_seconds: float) -> None:
+    async def _run(self) -> None:
         await self._events.state("listening")
-        audio = await self._capture(capture_seconds)
+        audio = await self._capture()
         await self._pipeline.run(audio)
 
     async def cancel(self) -> None:
@@ -127,23 +128,61 @@ class Sidecar:
                 await self._turn
         await self._events.state("idle")
 
-    async def _capture(self, seconds: float) -> bytes:
-        """Records from the default input.
+    async def _capture(self) -> bytes:
+        """Records until the speaker stops, using voice-activity endpointing.
+
+        This replaces a fixed-duration recording, which was the single largest
+        latency defect in the pipeline: a six-second window meant *every* turn
+        waited six seconds before recognition could even begin, spending twice
+        the entire budget on silence after a two-word command.
+
+        Endpointing stops on `SILENCE_TAIL_S` of quiet, so "show the map" takes
+        about a second of wall clock rather than six. `MAX_UTTERANCE_S` is a
+        backstop for a room that never goes quiet, not a target.
 
         Deferred import and a hard failure mode: with no microphone this raises
         and the turn reports an error, rather than silently returning empty
         audio that looks like the user said nothing.
         """
-        import sounddevice  # noqa: PLC0415
         import numpy  # noqa: PLC0415
+        import sounddevice  # noqa: PLC0415
 
+        config = self._config
         rate = 16_000
-        frames = await asyncio.to_thread(
-            lambda: sounddevice.rec(
-                int(seconds * rate), samplerate=rate, channels=1, dtype="int16", blocking=True
-            )
-        )
-        return bytes(numpy.asarray(frames).tobytes())
+        block = int(rate * 0.03)  # 30 ms, the frame size Silero and WebRTC use
+        collected: list[bytes] = []
+
+        def _record() -> bytes:
+            silence = 0.0
+            speech_seen = False
+            elapsed = 0.0
+            with sounddevice.InputStream(
+                samplerate=rate, channels=1, dtype="int16", blocksize=block
+            ) as stream:
+                while elapsed < config.max_utterance_s:
+                    frame, _ = stream.read(block)
+                    collected.append(bytes(numpy.asarray(frame).tobytes()))
+                    elapsed += 0.03
+
+                    # RMS gate rather than a neural VAD: it costs nothing, and
+                    # the microphone in this deployment is a near-field
+                    # conferencing unit, not a far-field array. Swap in Silero
+                    # here if the room proves noisier than the gate can handle.
+                    level = float(numpy.abs(numpy.asarray(frame, dtype="float32")).mean())
+                    if level > config.vad_threshold:
+                        speech_seen = True
+                        silence = 0.0
+                    else:
+                        silence += 0.03
+
+                    # Two different silences: before speech we wait longer,
+                    # because a user who pressed LISTEN is still drawing breath.
+                    limit = config.silence_tail_s if speech_seen else config.lead_in_s
+                    if silence >= limit:
+                        break
+            return b"".join(collected)
+
+        return await asyncio.to_thread(_record)
 
 
 async def serve(sidecar: Sidecar, config: Config = CONFIG) -> None:

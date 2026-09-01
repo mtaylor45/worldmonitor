@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import urllib.request
+from typing import Any
 
 from .commands import RESPONSE_SCHEMA, SYSTEM_PROMPT, build_prompt
 from .config import Config
@@ -40,42 +41,61 @@ class WhisperSTT:
         return await asyncio.to_thread(_run)
 
 
-class OllamaLLM:
-    """Ollama chat completion over HTTP, with constrained JSON decoding.
+class ChatLLM:
+    """OpenAI-compatible chat completion, with native tool calling.
 
-    Uses urllib rather than a client library: one POST to localhost does not
-    justify a dependency on a kiosk image that has to stay small.
+    Speaks to llama.cpp's `llama-server` or to Ollama's `/v1` - the API is the
+    same, so the runtime is a deployment choice rather than a code one.
 
-    `format` carries the response schema, so the model is constrained to emit a
-    well-formed object rather than asked nicely to. That is what makes this
-    work on a model with no native tool calling - see `commands.py` for why
-    that is the deliberate design rather than a workaround.
+    Tool calling IS used here, and that is not a reversal of the JSON-contract
+    design. Both are transports for the same claim: the model names a tool and
+    its arguments, and `tools.py` plus `commands.py` validate that claim
+    against a registry the model cannot influence. Native tool calling is the
+    better transport when the model has it, because the shape is parsed by the
+    server rather than by us. The boundary is unchanged.
     """
 
-    def __init__(self, config: Config) -> None:
-        self._url = config.ollama_url.rstrip("/") + "/api/chat"
-        self._model = config.ollama_model
+    def __init__(self, config: Config, registry: object | None = None) -> None:
+        self._url = config.llm_url.rstrip("/") + "/chat/completions"
+        self._model = config.llm_model
+        self._thinking = config.llm_thinking
+        self._registry = registry
 
     async def answer(self, question: str, snapshot: dict[str, object]) -> str:
-        payload = {
+        system = SYSTEM_PROMPT
+        if not self._thinking:
+            # Qwen3 reads this directive. A chain of thought the user never
+            # hears is latency spent on nothing, and on this CPU it is the
+            # single biggest per-turn saving available.
+            system += "\n/no_think"
+
+        payload: dict[str, Any] = {
             "model": self._model,
             "stream": False,
-            "format": RESPONSE_SCHEMA,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system},
                 {"role": "system", "content": build_prompt(snapshot)},
                 {"role": "user", "content": question},
             ],
-            "options": {
-                # Low temperature: the register and the action list are
-                # constraints, not style choices, and a creative model is one
-                # that drifts out of them faster.
-                "temperature": 0.2,
-                # Two sentences plus a small JSON envelope. Capping this is
-                # also the cheapest latency control there is on a CPU.
-                "num_predict": 120,
-            },
+            "temperature": 0.2,
+            # Two sentences plus a small envelope. Capping this is also the
+            # cheapest latency control available on a CPU.
+            "max_tokens": 160,
         }
+
+        schemas = getattr(self._registry, "schemas", None)
+        if callable(schemas):
+            tools = schemas()
+            if tools:
+                payload["tools"] = tools
+                payload["tool_choice"] = "auto"
+        else:
+            # No registry, or a model without tool calling: fall back to
+            # constrained JSON. Same contract, same validator.
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "command", "schema": RESPONSE_SCHEMA},
+            }
 
         def _run() -> str:
             request = urllib.request.Request(
@@ -83,17 +103,43 @@ class OllamaLLM:
                 data=json.dumps(payload).encode(),
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(request, timeout=10) as handle:
+            with urllib.request.urlopen(request, timeout=15) as handle:
                 body = json.loads(handle.read())
-            return str(body.get("message", {}).get("content", "")).strip()
+            message = (body.get("choices") or [{}])[0].get("message", {})
+
+            # A native tool call is normalised into the same JSON shape the
+            # validator already reads, so downstream code never branches on
+            # which transport produced it.
+            calls = message.get("tool_calls") or []
+            if calls:
+                call = calls[0].get("function", {})
+                raw_args = call.get("arguments") or "{}"
+                try:
+                    args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args)
+                except (ValueError, TypeError):
+                    args = {}
+                return json.dumps(
+                    {
+                        "tool": call.get("name"),
+                        "arguments": args,
+                        "speech": str(message.get("content") or "").strip(),
+                    }
+                )
+
+            return str(message.get("content", "")).strip()
 
         try:
             return await asyncio.to_thread(_run)
         except Exception:
             # A dead model server is a failed turn, not a crashed sidecar.
-            # Returning empty text makes `interpret` refuse, which speaks the
+            # Empty text makes `interpret` refuse, which speaks the
             # unavailable template - the honest answer.
             return ""
+
+
+#: Back-compat alias. The name changed when the adapter stopped being
+#: Ollama-specific; the behaviour did not.
+OllamaLLM = ChatLLM
 
 
 class KokoroTTS:

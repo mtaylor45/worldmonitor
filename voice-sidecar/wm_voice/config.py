@@ -37,16 +37,53 @@ class Config:
     stt_model: str = _env("WM_STT_MODEL", "small.en")
     stt_compute: str = _env("WM_STT_COMPUTE", "int8")
 
-    ollama_url: str = _env("WM_OLLAMA_URL", "http://127.0.0.1:11434")
-    # Gemma 3n E2B. Chosen for latency, not capability: on a 4-core Skylake a
-    # 7B at roughly 3-5 tok/s spends four to seven seconds on a twenty-token
-    # reply, which fails the three-second budget before the pipeline has done
-    # anything else. An E2B-class model is several times faster.
+    # ---- language model -------------------------------------------------
     #
-    # It has no native tool calling, and does not need any: P3 constrains the
-    # response with a JSON schema and validates it against the registry. See
-    # commands.py for why that is the design rather than a workaround.
-    ollama_model: str = _env("WM_OLLAMA_MODEL", "gemma3n:e2b")
+    # llama.cpp's OpenAI-compatible server rather than Ollama: it exposes
+    # native tool-call parsing for Qwen, takes an explicit thread count, and
+    # AVX2 builds matter on a Skylake part. Ollama still works - point
+    # `WM_LLM_URL` at :11434/v1 and it speaks the same API.
+    llm_url: str = _env("WM_LLM_URL", "http://127.0.0.1:8080/v1")
+
+    # Qwen3 8B Q4_K_M. Q4_K_M rather than a higher quant because CPU decode on
+    # this box is memory-bandwidth bound at ~34 GB/s: an 8-bit 8B moves roughly
+    # twice the bytes per token for quality this workload does not need.
+    llm_model: str = _env("WM_LLM_MODEL", "qwen3-8b-q4_k_m")
+
+    # Qwen3 has thinking and non-thinking modes. Voice turns run non-thinking:
+    # a chain of thought the user never hears is latency spent on nothing, and
+    # this is the single biggest per-turn saving available.
+    llm_thinking: bool = _env("WM_LLM_THINKING", "0") != "0"
+
+    # Optional tier-1 model for short conversational replies. Off by default:
+    # a second resident model costs RAM and another thing to keep loaded, and
+    # the pattern tier already covers the commands people repeat. Measure
+    # before enabling. Suggested: qwen3-1.7b-q4_k_m.
+    fast_model: str = _env("WM_FAST_MODEL", "")
+
+    # 8K is enough for the tool schemas plus a short turn, and every unused
+    # token of context is prompt-processing time on a CPU.
+    llm_context: int = int(_env("WM_LLM_CONTEXT", "8192"))
+
+    # Benchmark 6 against 8: the NUC has 4 physical cores, and on some
+    # workloads hyperthreads cost more in contention than they return.
+    llm_threads: int = int(_env("WM_LLM_THREADS", "8"))
+
+    # Where the dashboard's own HTTP API lives, for the data tools.
+    api_url: str = _env("WM_API_URL", "http://127.0.0.1:3000")
+
+    # ---- capture ---------------------------------------------------------
+    #
+    # Voice-activity endpointing. A fixed-length recording spends the whole
+    # latency budget on silence after a two-word command; these stop as soon as
+    # the speaker does.
+    vad_threshold: float = _float("WM_VAD_THRESHOLD", 350.0)
+    #: Quiet after speech that ends the utterance.
+    silence_tail_s: float = _float("WM_SILENCE_TAIL", 0.8)
+    #: Longer grace before speech starts - the user is still drawing breath.
+    lead_in_s: float = _float("WM_LEAD_IN", 2.5)
+    #: Backstop for a room that never goes quiet. Not a target.
+    max_utterance_s: float = _float("WM_MAX_UTTERANCE", 12.0)
 
     # Kokoro first, Piper if CPU latency disappoints (docs/VOICE-CHARACTER.md).
     tts_engine: str = _env("WM_TTS_ENGINE", "kokoro")
@@ -55,6 +92,15 @@ class Config:
     # Post-TTS signal chain. Disable to audition a raw voice against a
     # processed one, which is the only way to hear what the chain is doing.
     signal_chain: bool = _env("WM_SIGNAL_CHAIN", "1") != "0"
+
+    @property
+    def ollama_url(self) -> str:
+        """Back-compat alias. The adapter speaks the OpenAI-compatible API."""
+        return self.llm_url
+
+    @property
+    def ollama_model(self) -> str:
+        return self.llm_model
 
     @property
     def endpoint(self) -> str:

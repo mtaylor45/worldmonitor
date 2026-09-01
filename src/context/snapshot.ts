@@ -92,6 +92,13 @@ export interface SnapshotOptions {
   /** Action names the model may return. Generated from the registry. */
   actions?: string[];
   maxPanels?: number;
+  /**
+   * Include headline readings per panel.
+   *
+   * Off by default. Data belongs in tool results, not in every prompt; this
+   * exists for a caller that wants a self-contained snapshot for debugging.
+   */
+  includeReadings?: boolean;
 }
 
 /**
@@ -129,8 +136,17 @@ export function buildSnapshot(options: SnapshotOptions = {}): DashboardSnapshot 
         key,
         title: text(host.querySelector('.panel-title')) || key,
       };
-      const readings = readingsFor(host);
-      if (readings) panel.readings = readings;
+      // Readings are deliberately NOT included by default.
+      //
+      // Pushing every panel's numbers into every prompt costs prompt-processing
+      // time on a CPU for data the model usually does not need, and it grows
+      // without bound as panels are added. The model asks for a reading with a
+      // tool when it wants one. What the snapshot supplies is the vocabulary -
+      // which panels exist, so the model can name one.
+      if (options.includeReadings) {
+        const readings = readingsFor(host);
+        if (readings) panel.readings = readings;
+      }
       snapshot.panels.push(panel);
     }
 

@@ -1,29 +1,26 @@
 """Command interpretation: speech to a validated action.
 
-P3's boundary. The model never touches application state - it emits a JSON
-object naming an action, and everything after that is deterministic:
+P3's boundary. The model never touches application state - it names an action
+or a tool, and everything after that is deterministic:
 
-    user speech -> model -> JSON -> validated action -> wm:action -> dashboard
+    user speech -> model -> validated action -> wm:action -> dashboard
 
-**This deliberately does not use Ollama's tool-calling API.** Two reasons, and
-the second is the important one.
+**Two transports, one boundary.** A model with native tool calling returns a
+structured call; one without returns constrained JSON. `interpret` normalises
+both into the same shape and applies the same checks, so the guarantee does not
+depend on how the model was asked. That matters more than which transport is
+used: tool calling is the better mechanism when the model has it, because the
+server parses the shape rather than us - but it is a transport, not a licence
+to skip validation.
 
-The practical reason: Gemma has no native tool calling in Ollama, and Gemma is
-the right model for this hardware. A 7B at roughly 3-5 tok/s on a 4-core
-Skylake spends four to seven seconds on a twenty-token reply, which fails the
-three-second budget before the pipeline has done anything else. An E2B-class
-model is several times faster and comfortably inside it.
+What is validated: the action must be one the dashboard published, and a panel
+must be one it is actually rendering. Refusal is the default on every uncertain
+path, because an assistant that guesses which panel you meant is worse than one
+that says "Please specify" - the guess is silent and wrong, and nobody watches a
+wall panel closely enough to catch it.
 
-The architectural reason: tool calling would hand the model a mechanism that
-*looks* like it performs actions. What is wanted is a model that describes an
-intention, checked against a registry it cannot influence. A JSON contract plus
-this validator IS the deterministic boundary; the tool-calling API would be a
-less legible way to reach the same place, with a hard model requirement
-attached.
-
-Constrained decoding (`format` as a JSON schema, supported by Ollama) makes the
-shape reliable. This module assumes it can still be violated, because a
-validator that trusts its input is not one.
+The dashboard then validates again before dispatching. One validation would be
+a single point of trust in a language model's output.
 """
 
 from __future__ import annotations
@@ -35,8 +32,10 @@ from typing import Any
 
 from .phrasing import TEMPLATES
 
-# The response schema handed to Ollama's `format` parameter. Constrained
-# decoding makes a well-formed object near-certain; `interpret()` still checks.
+# Response schema for constrained decoding, used when the model has no native
+# tool calling. Constrained decoding makes a well-formed object near-certain;
+# `interpret()` still checks, because a validator that trusts its input is not
+# a validator.
 RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -47,6 +46,15 @@ RESPONSE_SCHEMA: dict[str, Any] = {
     "required": ["speech"],
 }
 
+#: Tool names a native tool call may use, mapped to the action they dispatch.
+#: Generated from the registry at call time; this is only the UI half, because
+#: data tools are executed by the sidecar rather than dispatched.
+UI_TOOL_ACTIONS = {
+    "focus_panel": ("panel.focus", "panel"),
+    "focus_map": ("map.focus", None),
+    "cycle_theme": ("theme.cycle", None),
+}
+
 
 @dataclass
 class Command:
@@ -55,6 +63,9 @@ class Command:
     speech: str
     action: str | None = None
     argument: str | None = None
+    #: A data tool the sidecar should execute before answering, if any.
+    tool: str | None = None
+    tool_arguments: dict[str, Any] = field(default_factory=dict)
     #: Why an action the model asked for was refused. Empty when none was asked
     #: for, or when it was accepted.
     refusals: list[str] = field(default_factory=list)
@@ -62,6 +73,10 @@ class Command:
     @property
     def performs(self) -> bool:
         return self.action is not None
+
+    @property
+    def needs_tool(self) -> bool:
+        return self.tool is not None
 
 
 def build_prompt(snapshot: dict[str, Any]) -> str:
@@ -78,13 +93,18 @@ def build_prompt(snapshot: dict[str, Any]) -> str:
 
     panels = snapshot.get("panels") or []
     if panels:
+        # Keys and titles only - deliberately NOT the readings.
+        #
+        # Pushing every panel's numbers into every prompt is the trap this
+        # design avoids: it costs prompt-processing time on a CPU for data the
+        # model usually does not need, and it grows without bound as panels are
+        # added. The model asks for a reading with a tool when it wants one.
+        # What it needs here is the vocabulary - which panels exist, so it can
+        # name one - not their contents.
         lines.append("Panels on the dashboard:")
         for panel in panels:
             key = panel.get("key", "")
-            title = panel.get("title", key)
-            readings = panel.get("readings") or {}
-            rendered = "; ".join(f"{k} {v}" for k, v in readings.items())
-            lines.append(f"- {key} ({title}){': ' + rendered if rendered else ''}")
+            lines.append("- " + str(key) + " (" + str(panel.get("title", key)) + ")")
 
     if snapshot.get("alert"):
         lines.append("The dashboard is in an alert state.")
@@ -93,10 +113,15 @@ def build_prompt(snapshot: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-SYSTEM_PROMPT = """You are the computer of a starship, controlling a \
-situational-awareness dashboard.
+SYSTEM_PROMPT = """You are the World Monitor intelligence interface, a \
+computer controlling a situational-awareness dashboard by voice.
 
-Reply with a JSON object only. No prose outside it.
+Use a tool whenever current information is required. Never invent current \
+events: if a tool did not return it, it is not available. When a tool returns \
+structured data, summarise it naturally rather than reading it out. When the \
+user asks for the display to change, call the tool rather than explaining how.
+
+Without native tool calling, reply with a JSON object only, no prose outside it:
 
   action    the action to perform, exactly as listed, or null to only speak
   argument  the action's argument if it takes one, otherwise null
@@ -149,6 +174,27 @@ def interpret(raw: str, snapshot: dict[str, Any]) -> Command:
 
     speech = parsed.get("speech")
     speech = speech.strip() if isinstance(speech, str) and speech.strip() else TEMPLATES["acknowledged"]
+
+    # A native tool call arrives as {"tool": ..., "arguments": {...}}. It is
+    # normalised into the same shape as the JSON contract so that the checks
+    # below apply identically regardless of which transport produced it - the
+    # boundary must not depend on how the model was asked.
+    tool_name = parsed.get("tool")
+    if isinstance(tool_name, str) and tool_name:
+        arguments = parsed.get("arguments")
+        arguments = arguments if isinstance(arguments, dict) else {}
+
+        mapping = UI_TOOL_ACTIONS.get(tool_name)
+        if mapping is None:
+            # Not a UI tool. It may be a data tool, which the caller executes
+            # and then asks again with the result; validation of the tool name
+            # itself belongs to the registry, not here.
+            return Command(speech=speech, tool=tool_name, tool_arguments=arguments)
+
+        action_name, argument_key = mapping
+        parsed = dict(parsed)
+        parsed["action"] = action_name
+        parsed["argument"] = arguments.get(argument_key) if argument_key else None
 
     requested = parsed.get("action")
     if not isinstance(requested, str) or not requested:

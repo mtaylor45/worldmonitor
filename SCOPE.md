@@ -391,7 +391,7 @@ Helvetica LT Std swap is one line.
 
 **Voice assets.** No cloned voices — see `docs/VOICE-CHARACTER.md`. Kokoro 82M
 (Apache-2.0) default, Piper (MIT) fallback, faster-whisper `small.en` int8
-(MIT), openWakeWord (Apache-2.0), Ollama 2–4B (Gemma 3n E2B).
+(MIT), openWakeWord (Apache-2.0), Qwen3 8B Q4_K_M on llama.cpp.
 
 ---
 
@@ -427,7 +427,7 @@ playback ends = ducking, unusable for always-on voice.
 | Audio | PipeWire + WirePlumber | MIT |
 | Containers | Docker (matches existing swarm tooling) | Apache-2.0 |
 | Frontend | Vanilla TS + Vite (upstream's stack — do not add a framework) | — |
-| LLM runtime | Ollama | MIT |
+| LLM runtime | llama.cpp (`llama-server`, OpenAI-compatible) | MIT |
 
 Server rather than Desktop, then `cage`. Ubuntu Desktop with the panel hidden is
 the common approach and is strictly worse — more surface area, more update churn,

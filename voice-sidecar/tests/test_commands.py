@@ -127,11 +127,20 @@ class Speech(unittest.TestCase):
 
 
 class Prompt(unittest.TestCase):
-    def test_lists_actions_and_panels_with_readings(self) -> None:
+    def test_lists_actions_and_panel_vocabulary(self) -> None:
         prompt = build_prompt(SNAPSHOT)
         self.assertIn("panel.focus", prompt)
-        self.assertIn("cii (Country Instability): Sudan 87.2", prompt)
+        self.assertIn("cii (Country Instability)", prompt)
         self.assertIn("Current theme: lcars", prompt)
+
+    def test_does_not_dump_panel_readings_into_the_prompt(self) -> None:
+        # Pushing every panel's numbers into every prompt costs
+        # prompt-processing time on a CPU for data the model usually does not
+        # need, and grows without bound as panels are added. The model asks for
+        # a reading with a tool; the prompt supplies only the vocabulary.
+        prompt = build_prompt(SNAPSHOT)
+        self.assertNotIn("87.2", prompt)
+        self.assertNotIn("Sudan", prompt)
 
     def test_mentions_an_alert_state(self) -> None:
         self.assertIn("alert state", build_prompt({**SNAPSHOT, "alert": True}))
@@ -147,6 +156,50 @@ class Schema(unittest.TestCase):
         # model is constrained to a shape the validator does not accept.
         self.assertEqual(set(RESPONSE_SCHEMA["properties"]), {"action", "argument", "speech"})
         self.assertEqual(RESPONSE_SCHEMA["required"], ["speech"])
+
+
+
+class NativeToolCalls(unittest.TestCase):
+    """A tool call and a JSON contract must reach the same verdict.
+
+    The guarantee is that the boundary does not depend on how the model was
+    asked. If these two paths could diverge, a model with tool calling would
+    be trusted more than one without - which is exactly backwards.
+    """
+
+    def call(self, tool: str, arguments: dict, speech: str = "Acknowledged.") -> str:
+        return json.dumps({"tool": tool, "arguments": arguments, "speech": speech})
+
+    def test_a_ui_tool_call_becomes_the_same_action(self) -> None:
+        native = interpret(self.call("focus_panel", {"panel": "cii"}), SNAPSHOT)
+        contract = interpret(model("panel.focus", "cii"), SNAPSHOT)
+        self.assertEqual((native.action, native.argument), ("panel.focus", "cii"))
+        self.assertEqual((native.action, native.argument), (contract.action, contract.argument))
+
+    def test_a_tool_call_naming_an_unrendered_panel_is_refused(self) -> None:
+        command = interpret(self.call("focus_panel", {"panel": "warp-core"}), SNAPSHOT)
+        self.assertFalse(command.performs)
+        self.assertEqual(command.speech, TEMPLATES["unavailable"])
+
+    def test_an_argumentless_ui_tool(self) -> None:
+        command = interpret(self.call("cycle_theme", {}), SNAPSHOT)
+        self.assertEqual(command.action, "theme.cycle")
+        self.assertIsNone(command.argument)
+
+    def test_a_data_tool_is_reported_for_execution_not_dispatched(self) -> None:
+        # Data tools are run by the sidecar; they are not dashboard actions,
+        # and must never be dispatched as one.
+        command = interpret(self.call("get_country_risk", {"country": "Sudan"}), SNAPSHOT)
+        self.assertTrue(command.needs_tool)
+        self.assertFalse(command.performs)
+        self.assertEqual(command.tool, "get_country_risk")
+        self.assertEqual(command.tool_arguments, {"country": "Sudan"})
+
+    def test_malformed_tool_arguments_do_not_raise(self) -> None:
+        raw = json.dumps({"tool": "focus_panel", "arguments": "not-an-object", "speech": "Ok."})
+        command = interpret(raw, SNAPSHOT)
+        # No panel argument survives, so it refuses rather than guessing.
+        self.assertFalse(command.performs)
 
 
 if __name__ == "__main__":  # pragma: no cover

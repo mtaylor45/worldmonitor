@@ -14,19 +14,33 @@ services:
     volumes:
       - wm-voice-models:/models
     environment:
-      WM_OLLAMA_URL: http://127.0.0.1:11434
-      WM_OLLAMA_MODEL: gemma3n:e2b
+      WM_LLM_URL: http://127.0.0.1:8080/v1
+      WM_LLM_MODEL: qwen3-8b-q4_k_m
+      # Non-thinking by default. A chain of thought the user never hears is
+      # latency spent on nothing, and it is the biggest per-turn saving here.
+      WM_LLM_THINKING: "0"
+      WM_API_URL: http://127.0.0.1:3000
       WM_STT_MODEL: small.en
       WM_TTS_VOICE: af_sarah
     restart: unless-stopped
 
-  ollama:
-    image: ollama/ollama:latest
+  # llama.cpp rather than Ollama: native Qwen tool-call parsing, an explicit
+  # thread count, and AVX2 builds - which matter on a Skylake part. Ollama
+  # still works; point WM_LLM_URL at :11434/v1 and it speaks the same API.
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server
     network_mode: host
     volumes:
-      - wm-ollama:/root/.ollama
+      - wm-llm-models:/models
+    command: >
+      --model /models/qwen3-8b-q4_k_m.gguf
+      --alias qwen3-8b-q4_k_m
+      --host 127.0.0.1 --port 8080
+      --ctx-size 8192
+      --threads 8
+      --jinja
     restart: unless-stopped
 
 volumes:
   wm-voice-models:
-  wm-ollama:
+  wm-llm-models:

@@ -11,6 +11,7 @@ and that a failure anywhere still returns the assistant to idle.
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 
 from wm_voice.phrasing import TEMPLATES
@@ -300,3 +301,106 @@ class Commands(unittest.TestCase):
         turn = asyncio.run(pipeline.run(b"audio"))
         self.assertIsNone(turn.action)
         self.assertEqual(events.values("action"), [])
+
+
+class Tiers(unittest.TestCase):
+    """The latency win: a repeated command must not reach the model."""
+
+    def test_a_direct_command_never_calls_the_model(self) -> None:
+        llm = FakeLLM()
+        pipeline, parts, events = build(
+            stt=FakeSTT("focus the country instability panel"), llm=llm
+        )
+        turn = asyncio.run(pipeline.run(b"audio"))
+
+        # The whole point: on this CPU the model IS the latency budget.
+        self.assertEqual(llm.asked, [])
+        self.assertEqual(turn.tier, "direct")
+        self.assertEqual((turn.action, turn.argument), ("panel.focus", "cii"))
+        self.assertEqual(events.values("action"), [("panel.focus", "cii")])
+        # And it still speaks and returns to idle like any other turn.
+        self.assertEqual(parts["audio"].played, [b"RIFF-fake-wav"])
+        self.assertEqual(events.values("state")[-1], "idle")
+
+    def test_a_question_still_reaches_the_model(self) -> None:
+        llm = FakeLLM()
+        pipeline, _, _ = build(stt=FakeSTT("what is happening in taiwan"), llm=llm)
+        turn = asyncio.run(pipeline.run(b"audio"))
+
+        self.assertEqual(len(llm.asked), 1)
+        self.assertEqual(turn.tier, "full")
+
+    def test_the_direct_tier_records_no_model_time(self) -> None:
+        # A turn that skipped the model should show it in the timings, so the
+        # latency harness attributes the saving rather than hiding it.
+        pipeline, _, _ = build(stt=FakeSTT("change the theme"))
+        turn = asyncio.run(pipeline.run(b"audio"))
+        self.assertNotIn("llm", turn.timings)
+        self.assertIn("tts", turn.timings)
+
+
+class DataToolLoop(unittest.TestCase):
+    def test_a_data_tool_runs_and_the_model_is_asked_again(self) -> None:
+        from wm_voice.tools import ToolRegistry
+
+        class StubApi:
+            async def get(self, path, params=None):
+                return {"country": "Sudan", "risk": 87}
+
+        registry = ToolRegistry(StubApi())  # type: ignore[arg-type]
+        registry.update(SNAPSHOT)
+
+        replies = iter([
+            json.dumps({"tool": "get_country_risk", "arguments": {"country": "Sudan"}}),
+            json_reply(speech="Sudan risk is eighty-seven."),
+        ])
+
+        class TwoStep:
+            def __init__(self) -> None:
+                self.asked: list[str] = []
+
+            async def answer(self, question: str, snapshot: dict) -> str:
+                self.asked.append(question)
+                return next(replies)
+
+        llm = TwoStep()
+        events = RecordingEvents()
+        pipeline = Pipeline(
+            stt=FakeSTT("how risky is sudan"),
+            llm=llm,  # type: ignore[arg-type]
+            tts=FakeTTS(),
+            audio=FakeAudio(),
+            events=events,
+            tools=registry,
+        )
+        pipeline.update_snapshot(SNAPSHOT)
+        turn = asyncio.run(pipeline.run(b"audio"))
+
+        self.assertEqual(turn.tool, "get_country_risk")
+        self.assertEqual(turn.spoken, "Sudan risk is eighty-seven.")
+        # The tool result reached the second call.
+        self.assertIn("Tool result", llm.asked[1])
+        # And the loop runs once: a second round would double the model cost,
+        # which on this hardware is the difference between a pause and a hang.
+        self.assertEqual(len(llm.asked), 2)
+        self.assertIn("tool", turn.timings)
+
+    def test_a_failing_tool_speaks_the_unavailable_template(self) -> None:
+        from wm_voice.tools import ToolRegistry
+
+        class DeadApi:
+            async def get(self, path, params=None):
+                raise ConnectionError("api down")
+
+        registry = ToolRegistry(DeadApi())  # type: ignore[arg-type]
+        registry.update(SNAPSHOT)
+
+        pipeline, _, _ = build(
+            stt=FakeSTT("how risky is sudan"),
+            llm=FakeLLM(json.dumps({"tool": "get_country_risk", "arguments": {"country": "Sudan"}})),
+        )
+        pipeline._tools = registry  # type: ignore[attr-defined]
+        turn = asyncio.run(pipeline.run(b"audio"))
+
+        self.assertEqual(turn.spoken, TEMPLATES["unavailable"])
+        self.assertTrue(any("failed" in r for r in turn.refusals))

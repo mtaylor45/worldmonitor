@@ -8,5 +8,7 @@ sounddevice==0.5.1
 numpy==2.2.3
 websockets==14.2
 
-# Ollama is reached over plain HTTP with urllib. One POST to localhost does not
-# justify a client library on an image that has to stay small.
+# The model server is reached over plain HTTP with urllib, through its
+# OpenAI-compatible API. One POST to localhost does not justify a client
+# library on an image that has to stay small - and it keeps llama.cpp and
+# Ollama interchangeable.

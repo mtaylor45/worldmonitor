@@ -363,7 +363,9 @@ worldmonitor/
 │   │   ├── phrasing.py      the register: validator, templates, numerals
 │   │   ├── pipeline.py      turn orchestration and the latency budget
 │   │   ├── protocol.py      wire protocol, mirrored in src/voice/
-│   │   ├── commands.py      the P3 boundary: JSON contract and validator
+│   │   ├── commands.py      the P3 boundary: contract and validator
+│   │   ├── router.py        intent tiers; tier 0 answers with no model
+│   │   ├── tools.py         UI tools dispatched, data tools fetched
 │   │   ├── server.py        WebSocket fan-out, push-to-talk, context
 │   │   ├── adapters.py      wake / STT / LLM / TTS / audio
 │   │   └── signal_chain.py  post-TTS ffmpeg chain
@@ -582,12 +584,19 @@ language model's output.
 the DOM, but that coupling is confined to one versioned file; the model never
 sees markup.
 
-**Tool calling is deliberately not used.** Tool-calling models in Ollama start
-around 7B, and on this CPU a 7B blows the three-second budget on its own. The
-recommendation is **Gemma 3n E2B**, which has no native tool calling and does
-not need any: the response is constrained by a JSON schema and validated
-against the registry. That is the same boundary, stated plainly, and it works
-on any model. See `docs/VOICE-CHARACTER.md`.
+**The model is Qwen3 8B Q4_K_M on llama.cpp, non-thinking.** Q4_K_M because CPU
+decode here is memory-bandwidth bound; non-thinking because a chain of thought
+the user never hears is latency spent on nothing.
+
+Tool calling is used where the model has it — but a native call and a
+constrained-JSON object are normalised into the same shape and checked against
+the same registry, so the boundary does not depend on how the model was asked.
+
+**The three-second target applies to tier 0, not to everything.** Pattern-matched
+commands ("show the map", "focus markets") answer in under a second with no
+model at all; questions and briefings take 8–12 s, because at ~4 tok/s an 8B
+cannot do better and pretending otherwise would ship a missed target. The
+arithmetic and the tier table are in `voice-sidecar/README.md`.
 
 ### P4 — Future features
 
