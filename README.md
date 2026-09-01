@@ -1,219 +1,1025 @@
-# World Monitor
 
-[简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
+# LCARS World Monitor
 
-**Real-time global intelligence dashboard** — AI-powered news aggregation, geopolitical monitoring, and infrastructure tracking in a unified situational awareness interface.
+A self-hosted, always-on situational-awareness dashboard with an LCARS-inspired interface, designed for a dedicated 1280×720 kiosk display and eventually controlled by a local voice assistant.
 
-[![GitHub stars](https://img.shields.io/github/stars/koala73/worldmonitor?style=social)](https://github.com/koala73/worldmonitor/stargazers)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/re63kWKxaz)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Last commit](https://img.shields.io/github/last-commit/koala73/worldmonitor)](https://github.com/koala73/worldmonitor/commits/main)
-[![Latest release](https://img.shields.io/github/v/release/koala73/worldmonitor?style=flat)](https://github.com/koala73/worldmonitor/releases/latest)
-[![npm: worldmonitor](https://img.shields.io/npm/v/worldmonitor?logo=npm&label=npm)](https://www.npmjs.com/package/worldmonitor)
-[![smithery badge](https://smithery.ai/badge/worldmonitor/wm-mcp)](https://smithery.ai/servers/worldmonitor/wm-mcp)
-[![skills.sh](https://skills.sh/b/koala73/worldmonitor)](https://skills.sh/koala73/worldmonitor)
+LCARS World Monitor is a personal fork of World Monitor⁠￼, extending the upstream dashboard with a dedicated theme architecture, LCARS visual system, kiosk deployment, and a roadmap toward fully local voice interaction.
 
-<p align="center">
-  <a href="https://www.worldmonitor.app"><img src="https://img.shields.io/badge/Web_App-worldmonitor.app-blue?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Web App"></a>&nbsp;
-  <a href="https://tech.worldmonitor.app"><img src="https://img.shields.io/badge/Tech_Variant-tech.worldmonitor.app-0891b2?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Tech Variant"></a>&nbsp;
-  <a href="https://finance.worldmonitor.app"><img src="https://img.shields.io/badge/Finance_Variant-finance.worldmonitor.app-059669?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Finance Variant"></a>&nbsp;
-  <a href="https://commodity.worldmonitor.app"><img src="https://img.shields.io/badge/Commodity_Variant-commodity.worldmonitor.app-b45309?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Commodity Variant"></a>&nbsp;
-  <a href="https://happy.worldmonitor.app"><img src="https://img.shields.io/badge/Happy_Variant-happy.worldmonitor.app-f59e0b?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Happy Variant"></a>&nbsp;
-  <a href="https://energy.worldmonitor.app"><img src="https://img.shields.io/badge/Energy_Variant-energy.worldmonitor.app-eab308?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Energy Variant"></a>
-</p>
+The project is designed around a simple idea:
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/worldmonitor"><img src="https://img.shields.io/npm/v/worldmonitor?style=for-the-badge&logo=npm&logoColor=white&label=npm%20i%20worldmonitor&color=CB3837" alt="npm i worldmonitor"></a>&nbsp;
-  <a href="https://www.npmjs.com/package/worldmonitor"><img src="https://img.shields.io/badge/CLI-npx%20worldmonitor-CB3837?style=for-the-badge&logo=npm&logoColor=white" alt="npx worldmonitor"></a>&nbsp;
-  <a href="https://pypi.org/project/worldmonitor-sdk/"><img src="https://img.shields.io/pypi/v/worldmonitor-sdk?style=for-the-badge&logo=pypi&logoColor=white&label=pip%20install%20worldmonitor-sdk&color=3775A9" alt="pip install worldmonitor-sdk"></a>&nbsp;
-  <a href="https://rubygems.org/gems/worldmonitor"><img src="https://img.shields.io/gem/v/worldmonitor?style=for-the-badge&logo=rubygems&logoColor=white&label=gem%20install%20worldmonitor&color=E9573F" alt="gem install worldmonitor"></a>&nbsp;
-  <a href="https://pkg.go.dev/github.com/koala73/worldmonitor/sdk/go"><img src="https://img.shields.io/badge/go%20get-sdk%2Fgo-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="go get github.com/koala73/worldmonitor/sdk/go"></a>
-</p>
+A situational-awareness display should be something you glance at — and eventually something you can talk to — rather than another application you have to sit down and operate.
 
-<p align="center">
-  <a href="https://www.worldmonitor.app/api/download?platform=windows-exe"><img src="https://img.shields.io/badge/Download-Windows_(.exe)-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download Windows"></a>&nbsp;
-  <a href="https://www.worldmonitor.app/api/download?platform=macos-arm64"><img src="https://img.shields.io/badge/Download-macOS_Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download macOS ARM"></a>&nbsp;
-  <a href="https://www.worldmonitor.app/api/download?platform=macos-x64"><img src="https://img.shields.io/badge/Download-macOS_Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Download macOS Intel"></a>&nbsp;
-  <a href="https://www.worldmonitor.app/api/download?platform=linux-appimage"><img src="https://img.shields.io/badge/Download-Linux_(.AppImage)-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download Linux"></a>
-</p>
+⸻
 
-<p align="center">
-  <a href="https://www.worldmonitor.app/docs/documentation"><strong>Documentation</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/koala73/worldmonitor/releases/latest"><strong>Releases</strong></a> &nbsp;·&nbsp;
-  <a href="https://www.worldmonitor.app/docs/contributing"><strong>Contributing</strong></a>
-</p>
+## Status
 
-![World Monitor Dashboard](docs/images/worldmonitor-7-mar-2026.jpg)
+Area	Status
+Upstream World Monitor integration	🟢 Active
+Theme engine	🟢 Complete
+Default theme compatibility	🟢 Verified
+LCARS theme	🟢 Implemented
+LCARS bright palette	🟢 Implemented
+Self-hosted fonts	🟢 Implemented
+LCARS sound system	🟢 Implemented
+Kiosk deployment configuration	🟡 Written / hardware verification pending
+12-column panel mapping	🟡 In progress
+Local voice assistant	⚪ Planned
+Voice commands	⚪ Planned
+Proactive alerts	⚪ Planned
+Home-lab telemetry	⚪ Planned
 
----
+The current implementation corresponds primarily to P0 — Foundation and the core P1 — LCARS Theme work.
 
-## What It Does
+See SCOPE.md⁠￼ for the authoritative project roadmap and acceptance criteria.
 
-- **Curated news feeds** across global and regional categories, AI-synthesized into briefs
-- **Dual map engine** — 3D globe (globe.gl) and WebGL flat map (deck.gl) with a shared map-layer catalog
-- **Panel inventory** — concrete panel implementations across specialized variants
-- **Cross-stream correlation** — military, economic, disaster, and escalation signal convergence
-- **Country Instability Index (CII)** — server-authoritative CII v8 stress scoring for the Tier-1 registry
-- **Finance radar** — stock exchanges, commodities, crypto, and a market composite
-- **Local AI** — run everything with Ollama, no API keys required
-- **Site variants** from a single codebase (world, tech, finance, commodity, happy, energy)
-- **Native desktop app** (Tauri 2) for macOS, Windows, and Linux
-- **Multilingual UI** with native-language feeds and RTL support
 
-For the full feature list, architecture, data sources, and algorithms, see the **[documentation](https://www.worldmonitor.app/docs/documentation)**.
+# Quick Start
 
----
+Prerequisites
 
-## Support Status
+For local development, you will need:
 
-All site variants and desktop binaries are built from a single codebase and ship from the same release process. The table below clarifies maintenance status so you know which surfaces are safe to depend on.
+* Node.js 20+
+* npm
+* Git
+* A modern Chromium/Chrome, Firefox, or Safari browser
 
-| Surface | Status | Notes |
-|---------|--------|-------|
-| `worldmonitor.app`, `tech.`, `finance.`, `commodity.`, `happy.`, `energy.` | Stable | Public deployments built from this repo, actively maintained |
-| Desktop binaries (Windows / macOS Apple Silicon / macOS Intel / Linux AppImage) | Stable | One Tauri binary for every variant — install World Monitor and switch to tech, finance, commodity, energy, or happy in-app. There is deliberately no per-variant download |
+For the intended kiosk deployment, the target environment is Ubuntu Server 26.04 LTS with Chromium running under cage/Wayland.
 
-Issues filed against any of the above are triaged from the same backlog — see the [issues board](https://github.com/koala73/worldmonitor/issues) for currently-open work.
+Note: The local voice-assistant components are not required for the current P0/P1 dashboard and LCARS functionality. Voice support is part of the planned P2/P3 implementation.
 
----
+⸻
 
-## Quick Start
+1. Clone the repository
 
-```bash
-git clone https://github.com/koala73/worldmonitor.git
+git clone https://github.com/mtaylor45/worldmonitor.git
 cd worldmonitor
+
+If you are working on the LCARS development branch:
+
+git checkout claude/lcars-world-monitor-n32ah2
+
+⸻
+
+2. Install dependencies
+
 npm install
+
+⸻
+
+3. Configure environment variables
+
+World Monitor uses environment variables for some data providers and optional integrations.
+
+Start by copying the example configuration if one is present:
+
+cp .env.example .env
+
+Then edit .env:
+
+nano .env
+
+Only configure the API keys and services you actually intend to use. The LCARS theme itself does not require external API credentials.
+
+If your checkout does not contain .env.example, consult the upstream World Monitor documentation and the existing environment configuration in the repository before creating one manually.
+
+⸻
+
+4. Start the development server
+
 npm run dev
-```
 
-Open [localhost:3000](http://localhost:3000) (override the port with `DEV_PORT` in `.env.local`). The app runs with no environment variables.
+Vite will normally make the development server available at:
 
-Feature-specific data sources may require credentials. See `.env.example` for the full list.
+http://localhost:5173
 
-For variant-specific development:
+Open that address in your browser.
 
-```bash
-npm run dev:tech       # tech.worldmonitor.app
-npm run dev:finance    # finance.worldmonitor.app
-npm run dev:commodity  # commodity.worldmonitor.app
-npm run dev:happy      # happy.worldmonitor.app
-npm run dev:energy     # energy.worldmonitor.app
-```
+⸻
 
-See the **[self-hosting guide](https://www.worldmonitor.app/docs/getting-started)** for deployment options (Vercel, Docker, static).
+5. Test the LCARS theme
 
----
+Once the dashboard is running, the theme engine can be controlled programmatically.
 
-## Tech Stack
+The supported theme identifiers currently include:
 
-| Category | Technologies |
-|----------|-------------|
-| **Frontend** | Vanilla TypeScript, Vite, globe.gl + Three.js, deck.gl + MapLibre GL |
-| **Desktop** | Tauri 2 (Rust) with Node.js sidecar |
-| **AI/ML** | Ollama / Groq / OpenRouter, Transformers.js (browser-side) |
-| **API Contracts** | Protocol Buffers and sebuf HTTP annotations |
-| **Deployment** | Vercel Edge Functions, Railway relay, Tauri, PWA |
-| **Caching** | Redis (Upstash), 3-tier cache, CDN, service worker |
+default
+lcars
+lcars-bright
 
-Full stack details in the **[architecture docs](https://www.worldmonitor.app/docs/architecture)**.
+The LCARS themes can also be selected using the theme controls provided by the application.
 
----
+For development, the theme engine supports URL-based theme selection, making it convenient to test a specific theme directly.
 
-## Programmatic Access
+For example:
 
-World Monitor is built for agents and scripts as well as browsers:
+http://localhost:5173/?theme=lcars
 
-- **MCP server** — `https://worldmonitor.app/mcp` (Streamable HTTP). Public `tools/list`; `tools/call` authenticates with a `X-WorldMonitor-Key` header or OAuth.
-  The server also publishes its Agent Skills through the draft `io.modelcontextprotocol/skills` extension (`skills/list`, `skills/get`, and `skill://…` resource reads).
-- **REST API** — base `https://api.worldmonitor.app`, described by the [OpenAPI spec](https://worldmonitor.app/openapi.yaml).
-- **CLI** — the official [`worldmonitor`](https://www.npmjs.com/package/worldmonitor) npm package (source in [`cli/`](cli/)):
+and:
 
-  ```sh
-  npx worldmonitor tools          # run ad-hoc — list every MCP tool (no key needed)
-  npm install -g worldmonitor     # or install the `worldmonitor` (alias `wm`) command
-  worldmonitor risk IR --api-key wm_xxx
-  ```
+http://localhost:5173/?theme=lcars-bright
 
-- **SDKs** — official zero-dependency client libraries mirroring the CLI: Python [`worldmonitor-sdk`](https://pypi.org/project/worldmonitor-sdk/) (source in [`sdk/python/`](sdk/python/)), Ruby [`worldmonitor`](https://rubygems.org/gems/worldmonitor) ([`sdk/ruby/`](sdk/ruby/)), Go [`github.com/koala73/worldmonitor/sdk/go`](https://pkg.go.dev/github.com/koala73/worldmonitor/sdk/go) ([`sdk/go/`](sdk/go/)). Guide: [worldmonitor.app/docs/sdks](https://www.worldmonitor.app/docs/sdks).
+If the application is already running, changing the theme does not require restarting the development server.
 
-Agent discovery files: [`llms.txt`](https://worldmonitor.app/llms.txt) · [agent-skills manifest](https://worldmonitor.app/.well-known/agent-skills/index.json) · [api-catalog](https://worldmonitor.app/.well-known/api-catalog). Get an API key at [worldmonitor.app/pro](https://www.worldmonitor.app/pro).
+⸻
 
----
+6. Run the test suite
 
-## Flight Data
+Before making changes, run the project’s automated checks:
 
-Flight data provided graciously by [Wingbits](https://wingbits.com?utm_source=worldmonitor&utm_medium=referral&utm_campaign=worldmonitor), the most advanced ADS-B flight data solution.
+npm test
 
----
+For browser/end-to-end testing:
 
-## Data Sources
+npx playwright test
 
-WorldMonitor aggregates attributed upstream sources across geopolitics, finance, energy, climate, aviation, cyber, military, infrastructure, and news intelligence. Curated feeds and freshness-tracked source groups are published in the full [data sources catalog](https://www.worldmonitor.app/docs/data-sources), with provider, feed-tier, license-posture, and collection-method details.
+The P0 theme-engine acceptance tests are located under:
 
----
+e2e/theme-engine-p0.spec.ts
 
-## Contributing
+These tests verify the most important theme-engine guarantees, including:
 
-Contributions welcome! See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+* Default-theme compatibility
+* Theme switching
+* Theme persistence
+* Repeated theme cycling
+* DOM stability
 
-```bash
-npm run typecheck        # Type checking
-npm run build:full       # Production build
-```
+⸻
 
----
+7. Build for production
 
-## License
+Create a production build with:
 
-**AGPL-3.0-only** for the source code. Commercial use is permitted under the AGPL when you comply with its copyleft and source-availability terms.
+npm run build
 
-| Use Case | Allowed? |
-|----------|----------|
-| Personal / research / educational | Yes, under AGPL-3.0-only |
-| Self-hosted instance | Yes, under AGPL-3.0-only |
-| Fork and modify | Yes, share source under AGPL-3.0-only when required |
-| Commercial use / SaaS | Yes, under AGPL-3.0-only when you comply with AGPL obligations |
-| Private-source proprietary use or official branding rights | Separate commercial or trademark permission needed |
+The generated application will be placed in the project’s normal Vite build output directory.
 
-See [LICENSE](LICENSE) for the full code license and [docs/license.mdx](docs/license.mdx) for a plain-language summary. Commercial licensing is available as an alternative option for teams that need non-AGPL terms.
+To preview the production build locally:
 
-Copyright (C) 2024-2026 Elie Habib. All rights reserved.
+npm run preview
 
----
+⸻
 
-## Author
+Kiosk Installation
 
-**Elie Habib** — [GitHub](https://github.com/koala73)
+The intended production deployment is a dedicated Ubuntu Server machine connected to a 1280×720 display.
 
-## Contributors
+The current kiosk configuration lives under:
 
-<a href="https://github.com/koala73/worldmonitor/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=koala73/worldmonitor" />
-</a>
+deploy/kiosk/
 
-## Security Acknowledgments
+The kiosk architecture is:
 
-We thank the following researchers for responsibly disclosing security issues:
+Ubuntu Server
+      ↓
+cage / Wayland
+      ↓
+Chromium
+      ↓
+World Monitor
+      ↓
+1280×720 display
 
-- **Cody Richard** — Disclosed three security findings covering IPC command exposure, renderer-to-sidecar trust boundary analysis, and fetch patch credential injection architecture (2026)
+The kiosk should run without:
 
-See our [Security Policy](./SECURITY.md) for responsible disclosure guidelines.
+* Desktop environment overhead
+* Browser controls
+* Scrollbars
+* Window decorations
+* Manual application startup
 
----
+Kiosk prerequisites
 
-<p align="center">
-  <a href="https://www.worldmonitor.app">worldmonitor.app</a> &nbsp;·&nbsp;
-  <a href="https://www.worldmonitor.app/docs/documentation">docs.worldmonitor.app</a> &nbsp;·&nbsp;
-  <a href="https://finance.worldmonitor.app">finance.worldmonitor.app</a> &nbsp;·&nbsp;
-  <a href="https://commodity.worldmonitor.app">commodity.worldmonitor.app</a>
-</p>
+Install the basic kiosk components:
 
-## Star History
+sudo apt update
+sudo apt install -y chromium cage
 
-<a href="https://star-history.dera.page/#koala73/worldmonitor&type=Date">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=koala73/worldmonitor&type=Date&theme=dark" />
-   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=koala73/worldmonitor&type=Date" />
- </picture>
-</a>
+Depending on the Ubuntu package configuration, the Chromium package may be named differently. Verify the installed executable with:
+
+which chromium
+which chromium-browser
+
+The kiosk configuration in deploy/kiosk/ should be treated as the source of truth for the actual startup command and systemd configuration rather than manually reconstructing the command line.
+
+⸻
+
+Production deployment model
+
+For a dedicated kiosk, the recommended deployment flow is:
+
+Git repository
+     ↓
+Production build
+     ↓
+Web server / container
+     ↓
+Chromium kiosk
+     ↓
+1280×720 display
+
+The kiosk itself should not need Node.js or the development server.
+
+Node.js is required for building the application, while the resulting production assets can be served by a lightweight HTTP server or the project’s intended container deployment.
+
+⸻
+
+Docker Deployment
+
+The project can also be deployed as a containerized web application.
+
+A typical workflow is:
+
+npm ci
+npm run build
+
+Then build the project’s production container according to the repository’s container configuration.
+
+For the intended self-hosted environment, the resulting image can be pushed to a private container registry and deployed through the existing Docker infrastructure.
+
+The kiosk remains a separate concern: it consumes the deployed web application through Chromium.
+
+⸻
+
+Updating an Existing Installation
+
+For a development checkout:
+
+git fetch origin
+git pull --ff-only
+npm ci
+npm run build
+
+For a production deployment, rebuild the application/container after updating the repository and redeploy the resulting version.
+
+When updating the fork from upstream, follow the fork discipline documented in:
+
+docs/UPSTREAM-DIFF.md
+
+and:
+
+SCOPE.md
+
+Do not blindly rebase or overwrite LCARS-specific changes with upstream changes.
+
+⸻
+
+Troubleshooting
+
+The development server will not start
+
+Verify Node.js:
+
+node --version
+npm --version
+
+Then reinstall dependencies:
+
+rm -rf node_modules
+npm ci
+npm run dev
+
+The LCARS theme does not appear
+
+Confirm that the application was started from the LCARS fork rather than an unmodified upstream checkout.
+
+Then verify the theme implementation under:
+
+src/themes/
+
+and inspect the browser console for theme-engine errors.
+
+The display overflows at 1280×720
+
+This is particularly important for LCARS development.
+
+Resize the browser to exactly:
+
+1280 × 720
+
+and check for both horizontal and vertical overflow.
+
+Do not solve a fixed-display layout problem by adding responsive breakpoints unless the feature specifically requires them. The primary kiosk is intentionally pixel-targeted.
+
+Kiosk Chromium does not start
+
+Check:
+
+systemctl status <kiosk-service>
+
+Then inspect the service logs:
+
+journalctl -u <kiosk-service> -b
+
+Verify that cage and Chromium are installed and that the kiosk user has permission to access the display/session.
+
+⸻
+
+Next Steps
+
+Once the dashboard is running, the recommended development path is:
+
+1. Confirm the default theme renders correctly.
+2. Switch to lcars.
+3. Test lcars-bright.
+4. Resize the browser to exactly 1280×720.
+5. Run the P0 Playwright tests.
+6. Review docs/DESIGN-SYSTEM.md.
+7. Review docs/UPSTREAM-DIFF.md before modifying upstream code.
+8. Use SCOPE.md to determine the next planned milestone.
+
+For contributors, the most important rule is simple:
+
+Keep the upstream application recognizable, keep fork-specific code isolated, and make the LCARS layer removable without having to rebuild World Monitor from scratch.
+⸻
+
+What This Project Adds
+
+LCARS World Monitor intentionally keeps the upstream World Monitor application intact wherever possible.
+
+The fork adds several layers around it:
+
+🎨 Theme system
+
+A dedicated theme engine provides an abstraction for visual themes without coupling the project to upstream’s own variant system.
+
+Themes may change:
+
+* Design tokens
+* Typography
+* Colors
+* Borders
+* Panels
+* Navigation
+* Structural chrome
+* Sounds
+* Other presentation behavior
+
+The architecture is deliberately capable of supporting structurally different themes, rather than limiting themes to simple recoloring.
+
+🖥️ LCARS interface
+
+The first major theme recreates the visual language of the Library Computer Access and Retrieval System (LCARS) from Star Trek: The Next Generation and related Trek-era interfaces.
+
+The implementation emphasizes the underlying design language rather than simply applying a collection of familiar colors.
+
+Key characteristics include:
+
+* Strong horizontal and vertical instrumentation
+* Pill-shaped controls
+* Large rounded structural elements
+* Black separation gutters
+* Compact technical typography
+* High information density
+* Distinct semantic alert states
+* Instrument-panel rather than application-window composition
+
+🖥️ Dedicated kiosk
+
+The intended deployment target is a fixed 1280×720 display.
+
+The kiosk environment is designed around:
+
+* Chromium
+* Wayland
+* cage
+* Ubuntu Server
+* Automatic startup
+* No browser chrome
+* No scrollbars
+* Pixel-specific layout
+
+The initial hardware target is an Intel NUC6i7KYK “Skull Canyon”.
+
+🎙️ Local voice assistant
+
+The eventual voice system is designed to operate entirely on local infrastructure.
+
+The planned pipeline is:
+
+Microphone
+    ↓
+openWakeWord
+    ↓
+faster-whisper
+    ↓
+Ollama
+    ↓
+Action / Context System
+    ↓
+Text-to-Speech
+    ↓
+Audio Output
+
+No cloud AI service is intended to be part of the runtime path.
+
+The voice system will understand a structured representation of the dashboard rather than scraping the rendered DOM.
+
+⸻
+
+Architecture
+
+At a high level, the system is divided into four major layers:
+
+┌─────────────────────────────────────────────────────┐
+│                  Chromium Kiosk                     │
+│                                                     │
+│   ┌─────────────────┐     ┌─────────────────────┐   │
+│   │  Theme Engine   │     │  World Monitor      │   │
+│   │                 │────▶│  Dashboard          │   │
+│   │  Tokens         │     │  Globe / Feeds      │   │
+│   │  Chrome         │     │  Panels / Data      │   │
+│   └─────────────────┘     └─────────────────────┘   │
+│             ▲                     │                 │
+│             │                     ▼                 │
+│             │              Context Snapshot         │
+│             │                     │                 │
+└─────────────┼─────────────────────┼─────────────────┘
+              │                     │
+              │ WebSocket           │ HTTP
+              │                     │
+┌─────────────┴─────────────────────┴─────────────────┐
+│                Local Voice Sidecar                  │
+│                                                     │
+│   Wake Word → STT → Local LLM → Actions → TTS      │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+
+Two architectural decisions are particularly important.
+
+The browser does not own the audio pipeline
+
+Microphone capture, wake-word detection, speech recognition, and text-to-speech belong in the voice sidecar.
+
+This avoids making Chromium responsible for the hardware and audio lifecycle and allows the voice system to operate independently of browser permissions.
+
+The frontend receives voice-state events through WebSocket.
+
+The LLM does not read the DOM
+
+The voice system will consume a structured context snapshot describing the current dashboard state.
+
+For example:
+
+Dashboard
+├── Current theme
+├── Visible panels
+├── Panel state
+├── Selected geographic region
+├── Alert state
+├── Relevant metrics
+└── Available actions
+
+This keeps the voice interface independent of upstream HTML implementation details.
+
+⸻
+
+Theme Architecture
+
+LCARS World Monitor maintains its own theme mechanism alongside the upstream World Monitor variant system.
+
+This distinction is intentional.
+
+Upstream’s variant system is primarily token-based and is coupled to an enumerated variant list. LCARS requires the ability to replace structural chrome and introduce behavior that cannot be represented solely through CSS custom properties.
+
+The project therefore keeps the two systems separate.
+
+Upstream variants
+        │
+        └── Continue working normally
+LCARS Theme Engine
+        │
+        ├── Tokens
+        ├── Structural chrome
+        ├── Navigation
+        ├── Sounds
+        └── Theme behavior
+
+The default World Monitor experience remains the baseline compatibility target.
+
+The default theme in the LCARS theme engine is intentionally an identity theme: it contributes no visual overrides and exists primarily to validate that enabling the theme engine does not alter upstream rendering.
+
+⸻
+
+LCARS Theme
+
+The LCARS theme currently provides:
+
+* LCARS structural frame
+* Left navigation rail
+* Header elbow
+* Footer voice indicator
+* Pill-style controls
+* LCARS typography
+* Self-hosted Antonio font
+* LCARS sound effects
+* Dark LCARS palette
+* Bright/high-contrast LCARS palette
+* Theme switching
+* Theme persistence
+* Theme action bus
+* Dashboard re-parenting into LCARS content chrome
+
+The two primary palettes are:
+
+lcars
+
+The screen-accurate darker LCARS palette.
+
+lcars-bright
+
+A higher-contrast variation intended for improved readability on physical displays.
+
+The correct palette is ultimately a hardware decision. A display that looks excellent in a browser development window is not necessarily the display that performs best at a distance on the physical kiosk.
+
+⸻
+
+Design Principles
+
+The LCARS implementation follows several rules.
+
+1. Instrumentation, not decoration
+
+LCARS elements should communicate structure or state.
+
+Decorative use of semantic colors weakens the interface.
+
+In particular, the salmon/red alert color is reserved for alert conditions rather than being treated as a generic accent.
+
+2. The 5px gutter matters
+
+The black separation gutter is a major part of the visual language.
+
+The interface should read as a collection of independent instrument modules rather than a conventional web page.
+
+3. Information density is intentional
+
+The target user should be able to glance at the display from approximately 2.5 meters.
+
+This means:
+
+* No unnecessarily small text
+* No excessive whitespace
+* Strong visual hierarchy
+* High-contrast state changes
+* Clear panel boundaries
+* Minimal interaction required for common information
+
+4. Structural themes must be possible
+
+The theme engine must support more than:
+
+--primary-color: ...
+--background-color: ...
+
+A future theme should be able to replace the entire visual chrome while continuing to consume the same World Monitor application.
+
+⸻
+
+Action System
+
+Interactive operations use a centralized action bus.
+
+Actions follow the form:
+
+namespace.verb
+
+Examples:
+
+theme.set
+theme.cycle
+voice.ptt
+panel.focus
+
+The intent is to maintain a single source of truth for interaction.
+
+The same action should eventually be reachable from:
+
+* LCARS rail buttons
+* Voice commands
+* Other future control surfaces
+
+This prevents the voice system and graphical UI from developing separate command implementations.
+
+⸻
+
+Project Structure
+
+The fork is deliberately organized so that most new functionality lives outside upstream files.
+
+worldmonitor/
+│
+├── src/
+│   ├── themes/
+│   │   ├── ...
+│   │   └── LCARS implementation
+│   │
+│   ├── voice/
+│   │   └── Local voice integration
+│   │
+│   └── context/
+│       └── Structured dashboard context
+│
+├── public/
+│   ├── fonts/
+│   └── sounds/
+│
+├── deploy/
+│   └── kiosk/
+│       └── Kiosk deployment configuration
+│
+├── e2e/
+│   └── Theme and acceptance tests
+│
+├── docs/
+│   ├── DESIGN-SYSTEM.md
+│   ├── LCARS-ASSETS.md
+│   ├── P0-PORT.md
+│   ├── UPSTREAM-DIFF.md
+│   ├── VOICE-CHARACTER.md
+│   └── WORKING-BRIEF.md
+│
+└── SCOPE.md
+
+Not every directory listed above is populated by the current implementation. Some represent planned P2/P3 architecture.
+
+⸻
+
+Upstream Relationship
+
+This repository is a fork of:
+
+koala73/worldmonitor⁠￼
+
+World Monitor is actively maintained and has a large upstream history. Keeping the fork mergeable is therefore treated as a first-class engineering constraint.
+
+The project follows these rules:
+
+1. New functionality should live in new directories whenever possible.
+2. Changes to upstream files should be limited to small, deliberate integration seams.
+3. Upstream files should never be reformatted merely for style.
+4. DOM attributes and hooks should be preferred over invasive upstream modifications.
+5. Every upstream file touched by fork-specific functionality should be documented in docs/UPSTREAM-DIFF.md⁠￼.
+
+To configure the upstream remote:
+
+git remote add upstream https://github.com/koala73/worldmonitor.git
+git fetch upstream
+
+The objective is to make upstream synchronization predictable rather than allowing the fork to gradually become an unmaintainable divergence.
+
+⸻
+
+Development Roadmap
+
+P0 — Foundation
+
+Status: Complete
+
+P0 established the theme architecture and demonstrated that it could coexist with the upstream application without altering the default experience.
+
+Completed:
+
+* Theme engine
+* Default identity theme
+* Theme switching
+* Theme persistence
+* URL theme selection
+* Action bus
+* Kiosk configuration
+* Theme-engine acceptance tests
+* Upstream compatibility verification
+
+The central acceptance criterion was that the default experience remain visually and structurally equivalent to upstream.
+
+⸻
+
+P1 — LCARS Theme
+
+Status: In progress
+
+Completed or substantially implemented:
+
+* LCARS chrome
+* Navigation rail
+* Header and footer elements
+* LCARS typography
+* Self-hosted font
+* Sound integration
+* Two LCARS palettes
+* Rail actions
+* Dashboard content integration
+* 1280×720 kiosk composition
+
+Remaining work includes finalizing the 12-column panel mapping and resolving the remaining upstream header-space constraint at the fixed 1280px width.
+
+⸻
+
+P2 — Voice, Read Only
+
+Status: Planned
+
+The voice assistant will initially be read-only.
+
+Planned pipeline:
+
+openWakeWord
+      ↓
+faster-whisper
+      ↓
+Ollama
+      ↓
+TTS
+
+Features:
+
+* Wake word
+* Push-to-talk
+* Live transcript
+* Voice-state indicator
+* Local inference
+* LCARS audio feedback
+* Structured dashboard questions
+
+Target:
+
+Under 3 seconds from end-of-speech to first audio on CPU.
+
+⸻
+
+P3 — Voice Commands
+
+Status: Planned
+
+P3 turns the voice assistant into an actual dashboard control interface.
+
+Commands will map onto the same action registry used by the graphical interface.
+
+Examples:
+
+"Computer, change the theme."
+"Computer, show the Pacific."
+"Computer, focus the market panel."
+"Computer, listen."
+
+The LLM should never directly manipulate application state.
+
+Instead:
+
+User speech
+    ↓
+LLM
+    ↓
+Validated action
+    ↓
+wm:action
+    ↓
+Application
+
+This provides a deterministic boundary between natural-language interpretation and application control.
+
+⸻
+
+Future Features
+
+The project maintains a larger P4 feature backlog, including:
+
+1. Proactive alert states
+2. Scheduled spoken briefings
+3. Presence-aware attract mode
+4. Conversational follow-up
+5. Voice-driven map control
+6. Panel focus brackets
+7. Home-lab telemetry
+8. PADD companion interface
+9. Historical time-scrubbing
+10. A second structurally different theme
+
+The most strategically interesting future feature is proactive alerting.
+
+A dashboard that merely displays information still requires attention.
+
+A dashboard that recognizes significant changes and speaks to the user becomes an actual monitoring system.
+
+⸻
+
+Home-Lab Integration
+
+A future version is intended to integrate with the surrounding self-hosted infrastructure.
+
+Potential telemetry includes:
+
+* Docker Swarm node health
+* Harbor registry status
+* NAS capacity
+* Media services
+* Application health
+* Infrastructure alerts
+
+This would allow the system to evolve from a world-news dashboard into a broader personal operations console.
+
+For example:
+
+“Computer, status of the compute swarm.”
+
+could eventually produce a concise spoken response based on live infrastructure telemetry.
+
+⸻
+
+Kiosk Hardware
+
+The primary target is:
+
+Intel NUC6i7KYK “Skull Canyon”
+
+CPU       Intel Core i7-6770HQ
+Cores     4
+Threads   8
+GPU       Intel Iris Pro 580
+Memory    32 GB
+Display   1280×720
+OS        Ubuntu Server 26.04 LTS
+Compositor cage / Wayland
+Browser   Chromium
+
+The fixed display resolution is intentional.
+
+This is not intended to become another responsive web application.
+
+The primary interface is a dedicated physical instrument.
+
+⸻
+
+Local-First Philosophy
+
+The project is intended to run on infrastructure controlled by the operator.
+
+The long-term architecture avoids cloud dependencies for:
+
+* Wake-word detection
+* Speech recognition
+* LLM inference
+* Text-to-speech
+* Dashboard control
+
+Network access may still be required by the underlying World Monitor data sources, but the assistant and kiosk control plane are intended to remain local.
+
+This provides:
+
+* Privacy
+* Predictable operation
+* No subscription requirement for AI inference
+* Independence from external AI APIs
+* Better control over latency
+* Continued operation when external AI services are unavailable
+
+⸻
+
+Testing
+
+Theme functionality is covered by automated browser tests.
+
+The P0 acceptance suite verifies, among other things:
+
+* Default rendering
+* Theme switching
+* Theme persistence
+* Repeated theme cycling
+* DOM stability
+* Theme-engine integration
+
+The project treats visual regressions seriously because the target is a fixed physical display rather than an arbitrary collection of browser viewport sizes.
+
+Future hardware acceptance testing will additionally verify:
+
+* Readability at distance
+* No horizontal overflow
+* No vertical overflow
+* Audio behavior
+* Wake-word reliability
+* CPU utilization
+* End-to-end voice latency
+* Long-duration kiosk stability
+
+⸻
+
+Documentation
+
+The repository contains deeper documentation for specific areas of the system.
+
+Document	Purpose
+SCOPE.md⁠￼	Authoritative roadmap, architecture, constraints, and acceptance criteria
+docs/DESIGN-SYSTEM.md⁠￼	LCARS visual and implementation specification
+docs/LCARS-ASSETS.md⁠￼	Asset research, licensing, and integration guidance
+docs/P0-PORT.md⁠￼	P0 theme-engine implementation and verification
+docs/UPSTREAM-DIFF.md⁠￼	Fork-specific changes to upstream files
+docs/VOICE-CHARACTER.md⁠￼	Voice interaction and character design
+docs/WORKING-BRIEF.md⁠￼	Engineering guidance and project working rules
+
+⸻
+
+Contributing
+
+This is primarily a personal self-hosted project, but contributions and technical discussion are welcome.
+
+When making changes:
+
+Keep upstream changes small
+
+Prefer adding functionality under:
+
+src/themes/
+src/voice/
+src/context/
+
+rather than modifying upstream components.
+
+Preserve the default experience
+
+Changes to the theme infrastructure should not unintentionally alter the standard World Monitor experience.
+
+Avoid unnecessary churn
+
+Do not reformat or reorganize upstream files unless the change is required.
+
+Document integration seams
+
+If an upstream file must be changed, document it in:
+
+docs/UPSTREAM-DIFF.md
+
+Test at the actual target resolution
+
+The primary design target is:
+
+1280 × 720
+
+A feature that looks correct at a developer’s 2560×1440 monitor but fails at 1280×720 is not considered complete.
+
+⸻
+
+Licensing
+
+This repository is a fork of World Monitor and is distributed under the GNU Affero General Public License v3.0 (AGPL-3.0), consistent with the upstream project’s licensing.
+
+See the repository’s license files and upstream project for the applicable terms.
+
+Third-party assets, fonts, sounds, and other resources may have separate licensing requirements. Only assets with appropriate licensing or redistribution rights should be included in the repository.
+
+In particular, commercially licensed Trek fonts and proprietary franchise assets should not be copied into this project merely because they resemble the LCARS aesthetic.
+
+The goal is an LCARS-inspired interface implemented with legally redistributable assets and original code.
+
+⸻
+
+Attribution
+
+This project builds upon the work of the World Monitor project:
+
+World Monitor
+https://github.com/koala73/worldmonitor
+
+The LCARS visual language is inspired by the fictional computer interfaces developed for the Star Trek television franchise.
+
+This project is an independent fan/technical project and is not affiliated with or endorsed by Paramount, CBS, or the Star Trek franchise.
+
+⸻
+
+Project Philosophy
+
+The final system is intended to feel less like a website and more like a piece of equipment.
+
+It should be:
+
+* Always available
+* Quiet when nothing matters
+* Visually informative at a glance
+* Audible when something important changes
+* Controllable without a keyboard
+* Locally operated
+* Deterministic where actions matter
+* Easy to maintain
+* Easy to synchronize with upstream
+
+The ideal interaction is not:
+
+Open browser → find dashboard → inspect panels → click around.
+
+It is:
+
+Look at the computer.
+
+And eventually:
+
+“Computer, status.”
+
+⸻
+
+Upstream Project
+
+World Monitor⁠￼
+
+Repository
+
+github.com/mtaylor45/worldmonitor⁠￼
