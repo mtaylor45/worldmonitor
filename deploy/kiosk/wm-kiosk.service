@@ -1,0 +1,51 @@
+# LCARS World Monitor — kiosk unit (SCOPE.md §5 P0, §9).
+#
+# Ubuntu Server 26.04 LTS + cage (Wayland) + Chromium. Server rather than
+# Desktop deliberately: a desktop session with the panel hidden has more
+# surface area, more update churn, and more things that can steal focus at 3am
+# on a display nobody is sitting in front of.
+#
+# Install:
+#   sudo cp deploy/kiosk/wm-kiosk.service /etc/systemd/system/
+#   sudo cp deploy/kiosk/wm-kiosk-launch.sh /usr/local/bin/
+#   sudo chmod +x /usr/local/bin/wm-kiosk-launch.sh
+#   sudo systemctl enable --now wm-kiosk.service
+#
+# Configure via /etc/default/wm-kiosk (see wm-kiosk.env.example).
+
+[Unit]
+Description=LCARS World Monitor kiosk
+# The dashboard is LAN-only, but it still needs the network stack up before
+# Chromium tries to reach the local origin.
+After=network-online.target systemd-user-sessions.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kiosk
+Group=kiosk
+PAMName=login
+
+EnvironmentFile=-/etc/default/wm-kiosk
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WLR_LIBINPUT_NO_DEVICES=1
+
+# cage is the whole session: one fullscreen client, no compositor chrome, no
+# way for another window to take the display.
+ExecStart=/usr/bin/cage -d -- /usr/local/bin/wm-kiosk-launch.sh
+
+# An unattended panel must come back on its own. Chromium can be killed by the
+# OOM killer or wedge on a GPU reset; neither should leave a black display.
+Restart=always
+RestartSec=5
+
+# Do not give up after the default burst. A panel that has been rebooting all
+# night should still be trying in the morning.
+StartLimitIntervalSec=0
+
+# The display is the only output; keep journal noise bounded.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target

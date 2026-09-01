@@ -1,0 +1,169 @@
+import { CONTENT_ATTRIBUTE } from '../engine';
+import type { ChromeContext, ThemeChrome } from '../types';
+
+/**
+ * LCARS frame construction.
+ *
+ * The frame is not decoration — it's the navigation. The left rail carries the
+ * panel switcher, the header carries system state, the footer carries the
+ * voice indicator. Everything the dashboard renders goes inside the content
+ * well bounded by the elbow.
+ *
+ * Structure:
+ *
+ *   ┌──────┐╭──────────────────────────────────╮
+ *   │ rail ││  header bar          WORLD MONITOR│
+ *   │  ╭───╯╰──────────────────────────────────╯
+ *   │  │
+ *   │  │     [data-wm-content]
+ *   │  │
+ *   ╰──┴───────────────────────────────────────╯
+ */
+
+interface RailItem {
+  id: string;
+  label: string;
+  /** Token name from the theme palette. */
+  tone: 'tan' | 'lilac' | 'periwinkle' | 'ice' | 'cream';
+  action: string;
+}
+
+const RAIL: RailItem[] = [
+  { id: 'brief', label: 'BRIEF', tone: 'tan', action: 'panel.focus:brief' },
+  { id: 'globe', label: 'GLOBE', tone: 'periwinkle', action: 'panel.focus:globe' },
+  { id: 'feeds', label: 'FEEDS', tone: 'tan', action: 'panel.focus:feeds' },
+  { id: 'cii', label: 'STRESS', tone: 'lilac', action: 'panel.focus:cii' },
+  { id: 'markets', label: 'MARKETS', tone: 'periwinkle', action: 'panel.focus:markets' },
+  { id: 'energy', label: 'ENERGY', tone: 'ice', action: 'panel.focus:energy' },
+  { id: 'listen', label: 'LISTEN', tone: 'cream', action: 'voice.ptt' },
+  { id: 'theme', label: 'DISPLAY', tone: 'tan', action: 'theme.cycle' },
+];
+
+const FRAME_CLASS = 'lcars-frame';
+
+/**
+ * LCARS screens carry four-digit codes beside every control. They're
+ * decorative in canon, so we derive them from the id — stable across reloads,
+ * which matters more than authenticity here. A code that reshuffles on every
+ * repaint reads as noise.
+ */
+function code(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return String((h % 9000) + 1000);
+}
+
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  cls?: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text) n.textContent = text;
+  return n;
+}
+
+function buildRail(ctx: ChromeContext): HTMLElement {
+  const rail = el('nav', 'lcars-rail');
+  rail.setAttribute('aria-label', 'Panels');
+
+  // Top cap — the rail's rounded head, above the elbow.
+  rail.appendChild(el('div', 'lcars-cap lcars-cap--top'));
+
+  for (const item of RAIL) {
+    const btn = el('button', `lcars-rail-btn lcars-tone-${item.tone}`);
+    btn.type = 'button';
+    btn.dataset.wmAction = item.action;
+    btn.appendChild(el('span', 'lcars-rail-code', code(item.id)));
+    btn.appendChild(el('span', 'lcars-rail-label', item.label));
+    btn.addEventListener('click', () => ctx.dispatch(item.action));
+    rail.appendChild(btn);
+  }
+
+  rail.appendChild(el('div', 'lcars-cap lcars-cap--bottom'));
+  return rail;
+}
+
+function buildHeader(): HTMLElement {
+  const header = el('header', 'lcars-header');
+  header.appendChild(el('div', 'lcars-elbow'));
+  const bar = el('div', 'lcars-header-bar');
+  bar.appendChild(el('span', 'lcars-header-status', 'ONLINE'));
+  bar.appendChild(el('h1', 'lcars-header-title', 'WORLD MONITOR'));
+  header.appendChild(bar);
+  header.appendChild(el('div', 'lcars-header-cap'));
+  return header;
+}
+
+function buildFooter(): HTMLElement {
+  const footer = el('footer', 'lcars-footer');
+  const voice = el('div', 'lcars-voice');
+  voice.dataset.voiceState = 'idle';
+  voice.appendChild(el('span', 'lcars-voice-dot'));
+  voice.appendChild(el('span', 'lcars-voice-text', 'STANDING BY'));
+  footer.appendChild(voice);
+  footer.appendChild(el('div', 'lcars-footer-bar'));
+  return footer;
+}
+
+export const lcarsChrome: ThemeChrome = {
+  shell(host, ctx) {
+    // Idempotent: a double mount (a re-render racing a theme change) must not
+    // produce two frames.
+    const mounted = host.querySelector(`:scope > .${FRAME_CLASS}`);
+    if (mounted instanceof HTMLElement) return () => unwrap(host, mounted);
+
+    // Preserve whatever the app already rendered, then re-parent it into the
+    // content well. Teardown puts it back exactly as found.
+    const original = [...host.childNodes];
+
+    const frame = el('div', FRAME_CLASS);
+    const header = buildHeader();
+    const body = el('div', 'lcars-body');
+    const rail = buildRail(ctx);
+    const content = el('main', 'lcars-content');
+    content.setAttribute(CONTENT_ATTRIBUTE, '');
+
+    for (const node of original) content.appendChild(node);
+
+    body.appendChild(rail);
+    body.appendChild(content);
+    frame.appendChild(header);
+    frame.appendChild(body);
+    frame.appendChild(buildFooter());
+    host.appendChild(frame);
+
+    return () => unwrap(host, frame);
+  },
+
+  panel(host) {
+    host.classList.add('lcars-panel');
+    return () => {
+      host.classList.remove('lcars-panel');
+      // An empty `class` attribute is still an attribute, and the cycle test
+      // compares attributes.
+      if (host.getAttribute('class') === '') host.removeAttribute('class');
+    };
+  },
+};
+
+/**
+ * Reverses a shell mount: whatever is in the content well goes back to the
+ * host, in order, and the frame is removed.
+ *
+ * Reads the content well at teardown time rather than closing over the node
+ * list captured at mount. Upstream re-renders the dashboard by assigning
+ * innerHTML, so the nodes present at mount are frequently not the nodes
+ * present now — restoring the captured list would re-attach detached markup
+ * and drop everything the dashboard has rendered since.
+ */
+function unwrap(host: HTMLElement, frame: HTMLElement): void {
+  const content = frame.querySelector<HTMLElement>(`[${CONTENT_ATTRIBUTE}]`);
+  if (content) {
+    // insertBefore(frame) rather than appendChild: the dashboard's markup goes
+    // back where the frame stood, not after any sibling added since.
+    while (content.firstChild) host.insertBefore(content.firstChild, frame);
+  }
+  frame.remove();
+}
