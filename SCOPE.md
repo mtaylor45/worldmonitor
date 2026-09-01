@@ -455,4 +455,5 @@ question and outside this scope.
 | `docs/VOICE-CHARACTER.md` | Phrasing table, prosody tuning, ffmpeg chain, engine comparison |
 | `docs/UPSTREAM-DIFF.md` | Every upstream file touched, and why |
 | `deploy/kiosk/README.md` | Kiosk install and operational notes |
+| `preview/lcars-preview.html` | Standalone 1280x720 mock for the on-panel palette test |
 | `SCOPE.md` | This document |

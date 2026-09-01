@@ -43,6 +43,7 @@ Log every upstream file touched in `docs/UPSTREAM-DIFF.md`.
 | `src/voice/` | Voice sidecar client (P2) |
 | `src/context/` | Panel state snapshot for the LLM (P3) |
 | `deploy/kiosk/` | `cage` + Chromium + systemd kiosk profile |
+| `preview/lcars-preview.html` | Standalone 1280x720 mock, no build step |
 | `docs/UPSTREAM-DIFF.md` | Every upstream file touched, and why |
 | `docs/P0-PORT.md` | Token extraction procedure and acceptance criteria |
 
@@ -92,9 +93,36 @@ usually not the nodes present when it unmounts. `unwrap()` moves whatever is in
 the content well back to the host; restoring a captured node list would
 re-attach detached markup and drop everything rendered since.
 
+**Token names are semantic, not literal** — `--wm-color-alert`, not
+`--wm-color-red`. A theme that renames red to blue should not have to lie. The
+one deliberate exception is LCARS's structural ramp (`tan`, `lilac`,
+`periwinkle`, `ice`, `cream`): those are *tone* names the chrome asks for by
+role, so a palette variant swaps hexes without touching a single chrome file.
+Everything that carries meaning — `alert`, `ok`, `readout`, `voice-*` — is
+named semantically.
+
+**A tokens-only theme cannot break the app.** `default` has no chrome, so if the
+LCARS frame ever breaks, switching back restores a working dashboard. Preserve
+that property: it is the safety net the whole engine rests on, and it is why
+chrome failures are caught and logged rather than rethrown.
+
+**Never write `data-theme`.** That attribute is upstream's, set before first
+paint by the prepaint script in `index.html` and read across `main.css` for
+light/dark. Ours is `data-wm-theme`. Writing the theme id into `data-theme`
+would silently clobber upstream's colour scheme.
+
 **Action strings are `namespace.verb`** (`theme.set`, `voice.ptt`,
 `panel.focus`). One registry, and the P3 voice tool schema derives from it.
 Rail buttons already carry `data-wm-action` in this form.
+
+---
+
+## Conventions
+
+- TypeScript strict. No `any` in our directories.
+- Comments explain *why*. The code already says what.
+- Vanilla TS, plain DOM factories for chrome. Upstream's stack is not
+  negotiable — do not introduce a framework for this.
 
 ---
 

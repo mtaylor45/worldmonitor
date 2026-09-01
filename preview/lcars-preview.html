@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LCARS preview — 1280×720</title>
+<!--
+  Standalone LCARS mock. No build step, no dependencies, no network.
+
+  Open it straight off the filesystem on the kiosk panel to settle the two
+  questions that cannot be answered from a desk (SCOPE.md §7.1, §11):
+
+    1. Which palette is legible at 2.5 m on a 163-PPI panel — Drexler or bright?
+    2. Does the type scale hold at that distance, especially the 13px floor?
+
+  Deliberately NOT wired to src/themes/. Sharing the token module would mean a
+  build step, and the point of this file is that it runs on a panel with
+  nothing installed. The values below are copied from
+  src/themes/lcars/tokens.ts; if they drift, that file wins.
+-->
+<style>
+  :root {
+    --gutter: 5px; --block: 10px; --rail: 128px; --rail-btn: 34px;
+    --header: 54px; --footer: 30px;
+    --elbow: 68px; --elbow-inner: 28px; --cap: 999px; --radius-block: 0px;
+    --size-micro: 13px; --size-label: 15px; --size-body: 17px;
+    --size-readout: 26px; --size-title: 38px; --tracking: 0.08em;
+    --font: 'Antonio', 'Oswald', 'Arial Narrow', sans-serif;
+    --alert: #cc6666;
+  }
+
+  /* Variant A — Drexler. Screen-accurate, muted. */
+  [data-palette="drexler"] {
+    --bg: #090909; --bg-panel: #0d0d0d;
+    --primary: #faa41b; --tan: #ec943a; --lilac: #c082a9;
+    --periwinkle: #b6a5d1; --ice: #8b72aa; --cream: #faa41b;
+    --readout: #ffcc00; --text: #e8c07a; --text-dim: #c89a4a;
+    --text-invert: #090909; --ok: #99cc99;
+  }
+
+  /* Variant B — bright. Higher contrast. */
+  [data-palette="bright"] {
+    --bg: #000; --bg-panel: #000;
+    --primary: #ff9c00; --tan: #ffcc66; --lilac: #cc99cc;
+    --periwinkle: #9999ff; --ice: #99ccff; --cream: #ffeebb;
+    --readout: #ffcc00; --text: #ffcc66; --text-dim: #c89a4a;
+    --text-invert: #000; --ok: #99cc99;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #000; }
+  body { user-select: none; font-family: var(--font); }
+
+  /* Exactly the kiosk panel. Nothing here is responsive on purpose — if it
+     does not fit 1280×720 it does not fit, and that is the finding. */
+  .panel-frame {
+    width: 1280px; height: 720px;
+    display: grid; grid-template-rows: auto minmax(0,1fr) auto;
+    gap: var(--gutter); padding: var(--gutter);
+    background: var(--bg); color: var(--text);
+  }
+
+  .hdr { display: grid; grid-template-columns: var(--rail) minmax(0,1fr) auto;
+         gap: var(--gutter); height: var(--header); font-size: var(--size-label); }
+  .elbow { background: var(--tan);
+           border-radius: var(--elbow) var(--radius-block) var(--radius-block) var(--cap); }
+  .hdr-bar { display: flex; align-items: center; justify-content: space-between;
+             padding: 0 18px; background: var(--lilac); color: var(--text-invert);
+             letter-spacing: var(--tracking); text-transform: uppercase; }
+  .hdr-title { font-size: var(--size-title); font-weight: 600; line-height: 1; }
+  .hdr-cap { width: 52px; background: var(--cream);
+             border-radius: var(--radius-block) var(--cap) var(--cap) var(--radius-block); }
+
+  .body { display: grid; grid-template-columns: var(--rail) minmax(0,1fr);
+          gap: var(--gutter); min-height: 0; }
+
+  .rail { display: flex; flex-direction: column; gap: var(--gutter);
+          min-height: 0; overflow: hidden; font-size: var(--size-label); }
+  .cap { flex: 0 0 18px; background: var(--tan); }
+  .cap-top { border-radius: var(--cap) var(--radius-block) 0 0; }
+  .cap-bot { border-radius: 0 0 var(--radius-block) var(--elbow); }
+  .btn { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column;
+         align-items: flex-end; justify-content: center; gap: 2px;
+         padding: 0 10px; border: 0; color: var(--text-invert); cursor: pointer;
+         font-family: var(--font); text-align: right;
+         border-radius: 50% var(--radius-block) var(--radius-block) 50%; }
+  .btn .code { font-size: var(--size-micro); opacity: .65; line-height: 1; }
+  .btn .lbl { font-size: var(--size-label); font-weight: 600; line-height: 1;
+              letter-spacing: var(--tracking); text-transform: uppercase; }
+  .t-tan { background: var(--tan); } .t-lilac { background: var(--lilac); }
+  .t-peri { background: var(--periwinkle); } .t-ice { background: var(--ice); }
+  .t-cream { background: var(--cream); }
+
+  .well { display: grid; grid-template-columns: repeat(12, 1fr);
+          grid-auto-rows: minmax(0, 1fr); gap: var(--gutter);
+          min-width: 0; min-height: 0; }
+  .card { background: var(--bg-panel); border: 1px solid var(--tan);
+          padding: var(--block); min-width: 0; min-height: 0; overflow: hidden; }
+  .card h2 { margin: 0 0 8px; font-size: var(--size-label); font-weight: 600;
+             letter-spacing: var(--tracking); text-transform: uppercase;
+             color: var(--tan); }
+  .readout { font-size: var(--size-readout); color: var(--readout); line-height: 1.1; }
+  .body-txt { font-size: var(--size-body); color: var(--text); }
+  .micro { font-size: var(--size-micro); color: var(--text-dim); }
+
+  .span-4 { grid-column: span 4; } .span-5 { grid-column: span 5; }
+  .span-3 { grid-column: span 3; } .span-12 { grid-column: span 12; }
+
+  /* The signal ramp is upstream's, NOT the theme's. Shown here so a palette
+     decision can be checked against it: if a calm reading stops reading as
+     calm next to the LCARS blocks, the palette is wrong. */
+  .ramp { display: flex; gap: var(--gutter); align-items: center; flex-wrap: wrap; }
+  .chip { font-size: var(--size-micro); padding: 3px 8px; color: #000; font-weight: 600; }
+
+  .ftr { display: grid; grid-template-columns: auto minmax(0,1fr);
+         gap: var(--gutter); height: var(--footer); }
+  .voice { display: flex; align-items: center; gap: 8px; padding: 0 18px;
+           background: var(--bg-panel); color: var(--periwinkle);
+           font-size: var(--size-label); letter-spacing: var(--tracking);
+           border-radius: var(--cap) var(--radius-block) var(--radius-block) var(--cap); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+  .ftr-bar { background: var(--ice);
+             border-radius: var(--radius-block) var(--cap) var(--cap) var(--radius-block); }
+
+  .alert-demo { background: var(--alert); color: #000; }
+
+  .toolbar { font: 13px/1.5 system-ui, sans-serif; color: #ccc; background: #111;
+             padding: 10px 14px; display: flex; gap: 14px; align-items: center; }
+  .toolbar button { font: inherit; padding: 4px 10px; cursor: pointer; }
+  .note { max-width: 62ch; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <strong>LCARS preview</strong>
+  <button id="swap">Toggle palette</button>
+  <button id="alert">Toggle alert state</button>
+  <span id="which"></span>
+  <span class="note">View at 100% on the kiosk panel and judge from 2.5 m. The
+    question is legibility, not preference.</span>
+</div>
+
+<div class="panel-frame" data-palette="bright" id="frame">
+  <div class="hdr">
+    <div class="elbow"></div>
+    <div class="hdr-bar"><span>Online</span><span class="hdr-title">World Monitor</span></div>
+    <div class="hdr-cap"></div>
+  </div>
+
+  <div class="body">
+    <nav class="rail">
+      <div class="cap cap-top"></div>
+      <button class="btn t-tan"><span class="code">1370</span><span class="lbl">Brief</span></button>
+      <button class="btn t-peri"><span class="code">8901</span><span class="lbl">Globe</span></button>
+      <button class="btn t-tan"><span class="code">1309</span><span class="lbl">Feeds</span></button>
+      <button class="btn t-lilac"><span class="code">9499</span><span class="lbl">Stress</span></button>
+      <button class="btn t-peri"><span class="code">1871</span><span class="lbl">Markets</span></button>
+      <button class="btn t-ice"><span class="code">1320</span><span class="lbl">Energy</span></button>
+      <button class="btn t-cream"><span class="code">6695</span><span class="lbl">Listen</span></button>
+      <button class="btn t-tan"><span class="code">6241</span><span class="lbl">Display</span></button>
+      <div class="cap cap-bot"></div>
+    </nav>
+
+    <main class="well">
+      <section class="card span-5">
+        <h2>Country instability</h2>
+        <div class="readout">Sudan 87.2</div>
+        <div class="readout">Myanmar 74.9</div>
+        <p class="body-txt">Three escalation signals detected.</p>
+        <p class="micro">13px floor — if this is unreadable at 2.5 m, the scale is wrong.</p>
+      </section>
+
+      <section class="card span-4">
+        <h2>Market composite</h2>
+        <div class="readout">61.4</div>
+        <p class="body-txt">Brent up one point eight percent.</p>
+        <p class="micro">Gold readout vs amber body text: check both hold at distance.</p>
+      </section>
+
+      <section class="card span-3">
+        <h2>Type scale</h2>
+        <p style="font-size:var(--size-title);line-height:1">38</p>
+        <p style="font-size:var(--size-readout);line-height:1.1">26 readout</p>
+        <p style="font-size:var(--size-body)">17 body</p>
+        <p style="font-size:var(--size-label)">15 label</p>
+        <p style="font-size:var(--size-micro)">13 micro</p>
+      </section>
+
+      <section class="card span-12">
+        <h2>Signal ramp — upstream's, not the theme's</h2>
+        <div class="ramp">
+          <span class="chip" style="background:#ef4444">Critical</span>
+          <span class="chip" style="background:#f97316">High</span>
+          <span class="chip" style="background:#eab308">Medium</span>
+          <span class="chip" style="background:#22c55e">Low</span>
+          <span class="chip" style="background:#3b82f6">Info</span>
+          <span class="chip alert-demo">Alert salmon #cc6666 — alert only</span>
+          <span class="micro">A calm reading must still read as calm beside the LCARS blocks.</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="ftr">
+    <div class="voice"><span class="dot"></span><span>Standing by</span></div>
+    <div class="ftr-bar"></div>
+  </div>
+</div>
+
+<script>
+  const frame = document.getElementById('frame');
+  const which = document.getElementById('which');
+  const show = () => { which.textContent = 'palette: ' + frame.dataset.palette; };
+  document.getElementById('swap').onclick = () => {
+    frame.dataset.palette = frame.dataset.palette === 'bright' ? 'drexler' : 'bright';
+    show();
+  };
+  // Alert state repaints only the structural blocks — never the signal ramp.
+  document.getElementById('alert').onclick = () => {
+    for (const el of document.querySelectorAll('.btn, .elbow, .cap, .hdr-cap')) {
+      el.style.background = el.style.background ? '' : 'var(--alert)';
+    }
+  };
+  show();
+</script>
+</body>
+</html>

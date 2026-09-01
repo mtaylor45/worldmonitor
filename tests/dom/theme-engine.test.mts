@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ThemeEngine, CONTENT_ATTRIBUTE, PANEL_ATTRIBUTE, SHELL_ATTRIBUTE, THEME_ATTRIBUTE } from '@/themes/engine';
+
+// Every engine here is built with the stylesheet wait disabled: happy-dom does
+// not fetch stylesheets and never fires `load` on a <link>, so the real wait
+// would strand. The browser timing is covered by e2e/theme-engine-p0.spec.ts.
 import { ACTION_EVENT, THEME_CHANGE_EVENT, type ActionDetail, type ThemeChangeDetail, type Theme } from '@/themes/types';
 
 function shellFixture(): HTMLElement {
@@ -30,7 +34,7 @@ describe('ThemeEngine', () => {
   });
 
   it('leaves the cascade untouched for a theme that declares no tokens', async () => {
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough);
     await engine.apply('default');
 
@@ -41,7 +45,7 @@ describe('ThemeEngine', () => {
   });
 
   it('namespaces the semantic groups and emits upstream tokens verbatim', async () => {
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough);
     engine.register(
       tokenTheme('lcars', {
@@ -65,7 +69,7 @@ describe('ThemeEngine', () => {
   });
 
   it('falls back to the default theme for an unknown id instead of throwing', async () => {
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough);
 
     // A stale persisted value or a mis-heard voice command must degrade to a
@@ -75,7 +79,7 @@ describe('ThemeEngine', () => {
   });
 
   it('persists the applied theme, and honours persist:false for URL pins', async () => {
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough, tokenTheme('lcars', { color: { tan: '#ec943a' } }));
 
     await engine.apply('lcars');
@@ -86,7 +90,7 @@ describe('ThemeEngine', () => {
   });
 
   it('survives localStorage throwing on write', async () => {
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough, tokenTheme('lcars', { color: { tan: '#ec943a' } }));
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('storage disabled');
@@ -97,7 +101,7 @@ describe('ThemeEngine', () => {
   });
 
   it('emits a change event carrying both ends of the transition', async () => {
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough, tokenTheme('lcars', { color: { tan: '#ec943a' } }));
 
     const seen: ThemeChangeDetail[] = [];
@@ -115,7 +119,7 @@ describe('ThemeEngine', () => {
   });
 
   it('does not re-apply or re-emit when the theme is already active', async () => {
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough);
     const listener = vi.fn();
     document.addEventListener(THEME_CHANGE_EVENT, listener);
@@ -127,7 +131,7 @@ describe('ThemeEngine', () => {
   });
 
   it('keeps the dashboard alive when a theme cannot mount its chrome', async () => {
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough);
     engine.register({
       id: 'broken',
@@ -155,7 +159,7 @@ describe('LCARS chrome', () => {
 
   it('re-parents the dashboard into the content well and restores it on teardown', async () => {
     const { lcars } = await import('@/themes/lcars');
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough, lcars);
 
     const shell = document.querySelector<HTMLElement>(`[${SHELL_ATTRIBUTE}]`)!;
@@ -176,7 +180,7 @@ describe('LCARS chrome', () => {
     // replayed the node list captured at mount would re-attach detached markup
     // and drop everything rendered since.
     const { lcars } = await import('@/themes/lcars');
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough, lcars);
     const shell = document.querySelector<HTMLElement>(`[${SHELL_ATTRIBUTE}]`)!;
 
@@ -191,7 +195,7 @@ describe('LCARS chrome', () => {
 
   it('mounts the panel slot on every upstream panel host', async () => {
     const { lcars } = await import('@/themes/lcars');
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough, lcars);
 
     await engine.apply('lcars');
@@ -203,7 +207,7 @@ describe('LCARS chrome', () => {
 
   it('rail buttons dispatch their action on the shared bus', async () => {
     const { lcars } = await import('@/themes/lcars');
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough, lcars);
     await engine.apply('lcars');
 
@@ -223,7 +227,7 @@ describe('LCARS chrome', () => {
     // mounted at boot was wiped by upstream's first render and the theme came
     // up bare after every reload.
     const { lcars } = await import('@/themes/lcars');
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough, lcars);
     await engine.apply('lcars');
 
@@ -239,7 +243,7 @@ describe('LCARS chrome', () => {
 
   it('stops restoring chrome once its theme is no longer active', async () => {
     const { lcars } = await import('@/themes/lcars');
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough, lcars);
     await engine.apply('lcars');
     await engine.apply('default');
@@ -265,7 +269,7 @@ describe('theme cycling', () => {
     // chrome rather than a stub, because the thing under test is whether an
     // actual theme's mount/teardown pair is a true inverse.
     const { lcars, lcarsBright } = await import('@/themes/lcars');
-    const engine = new ThemeEngine();
+    const engine = new ThemeEngine(document, 0);
     engine.register(passthrough, lcars, lcarsBright);
     await engine.apply('default');
 

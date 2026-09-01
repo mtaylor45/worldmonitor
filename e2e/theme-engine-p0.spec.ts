@@ -184,6 +184,13 @@ test.describe('P0 — theme cycling is lossless', () => {
     await page.clock.install({ time: start });
     await loadDashboard(page, '?wm-theme=default');
     await page.clock.pauseAt(new Date('2026-01-01T00:05:00Z'));
+    // Pausing the clock stops upstream scheduling new work, but a response
+    // already in flight can still land and rewrite a panel body. Applying a
+    // theme now awaits its stylesheet, which yields to the event loop far more
+    // than the old synchronous path did, so that window is real. Wait for the
+    // page to go quiet before capturing; tolerate never settling rather than
+    // failing here, since the assertion below is the actual subject.
+    await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 
     // Applying a theme is async (its stylesheet is fetched on demand), so the
     // sixty switches cannot run in one synchronous block and upstream is free
@@ -282,6 +289,26 @@ test.describe('P1 — LCARS frame', () => {
     // exercising the button here is also the P3 contract under test.
     await page.locator('[data-wm-action="theme.cycle"]').click();
     await expect(page.locator('html')).not.toHaveAttribute('data-wm-theme', 'lcars');
+  });
+
+  test('upstream header fits the content well instead of being clipped', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // The frame narrows the container, not the viewport, so upstream's own
+    // "drop least-essential items" ladder (main.css:1094-1115) never fires on
+    // its own and its right-hand controls run off the edge. `.main-content`
+    // has overflow-x: hidden, so nothing scrolls and nothing errors — the
+    // controls just vanish. Only measuring catches it.
+    const fit = await page.evaluate(() => {
+      const header = document.querySelector<HTMLElement>('.header');
+      if (!header) return null;
+      return { scroll: header.scrollWidth, client: header.clientWidth };
+    });
+
+    expect(fit).not.toBeNull();
+    expect(fit!.scroll, 'upstream header overflows the LCARS content well').toBeLessThanOrEqual(
+      fit!.client + 1,
+    );
   });
 
   test('no text in the chrome falls below the 13px floor', async ({ page }) => {

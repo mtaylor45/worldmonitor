@@ -273,3 +273,47 @@
 :root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-cap {
   background: var(--wm-color-alert);
 }
+
+
+/* ---------- Upstream header degradation ladder ----------
+
+   Upstream drops least-essential header items as the VIEWPORT narrows
+   (main.css:1094-1115), each one "still reachable elsewhere — footer links,
+   the mobile hamburger menu, or the map's own controls".
+
+   The LCARS frame narrows the CONTAINER, not the viewport, so that ladder
+   never fires and upstream's right-hand controls run off the edge of the
+   content well. `.main-content` has `overflow-x: hidden`, so the result is
+   silent clipping rather than a scrollbar — Sign In and Create account simply
+   vanish at 1280x720.
+
+   These rules re-run upstream's own ladder at the viewport width where the
+   CONTENT WELL crosses each of its breakpoints: well = 100vw minus the frame
+   inset (rail + frame padding + body gap = 148px, --wm-frame-inset). Each
+   threshold below is upstream's number plus that inset, rounded up.
+
+   COUPLING: these selectors and breakpoints mirror main.css. If upstream
+   retunes its ladder this must be re-derived — recorded in
+   docs/UPSTREAM-DIFF.md and covered by the header-fit e2e assertion. Nothing
+   here modifies an upstream file. */
+
+@media (max-width: 1680px) {
+  :root[data-wm-theme^="lcars"] .credit-link,
+  :root[data-wm-theme^="lcars"] .github-link { display: none !important; }
+}
+@media (max-width: 1570px) {
+  :root[data-wm-theme^="lcars"] .version,
+  :root[data-wm-theme^="lcars"] .fullscreen-btn { display: none !important; }
+}
+@media (max-width: 1480px) {
+  :root[data-wm-theme^="lcars"] .copy-link-btn { display: none !important; }
+}
+@media (max-width: 1350px) {
+  :root[data-wm-theme^="lcars"] .pizzint-indicator { display: none !important; }
+}
+@media (max-width: 1225px) {
+  :root[data-wm-theme^="lcars"] .mission-preset-mount { display: none !important; }
+}
+@media (max-width: 1130px) {
+  :root[data-wm-theme^="lcars"] .variant-switcher { display: none !important; }
+}

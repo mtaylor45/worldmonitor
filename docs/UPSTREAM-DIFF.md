@@ -111,18 +111,39 @@ kiosk, and to be replaced before any public distribution.
 
 ---
 
-## Known consequences of the LCARS frame
+## Deliberate couplings to upstream internals
 
-The frame re-parents upstream's markup into a content well 104px narrower than
-the viewport. Upstream's header does not reflow at that width, so its
-right-hand controls (Sign In, Create account) are clipped at 1280x720.
+Neither of these modifies an upstream file, but both read upstream's internals
+and so must be re-checked after a merge.
 
-This is **not** a layout bug in the frame — the page does not overflow in either
-direction, and `.main-content` clips rather than scrolls, which is upstream's
-own behaviour. It is the 12-column panel mapping still owed by P1. Recorded
-here because it is the first thing a reviewer will notice in a screenshot.
+### The header degradation ladder
 
-Nothing about it touches an upstream file.
+`src/themes/lcars/lcars.css` re-runs upstream's own header ladder at shifted
+breakpoints.
+
+Upstream drops least-essential header items as the **viewport** narrows
+(`main.css:1094-1115`), each one "still reachable elsewhere — footer links, the
+mobile hamburger menu, or the map's own controls". The LCARS frame narrows the
+**container**, not the viewport, so that ladder never fires and upstream's
+right-hand controls (Sign In, Create account) ran off the edge of the content
+well. `.main-content` has `overflow-x: hidden`, so the failure was silent
+clipping rather than a scrollbar.
+
+Our rules fire at the viewport width where the content well crosses each of
+upstream's thresholds — upstream's number plus the 148px frame inset (rail +
+frame padding + body gap, recorded as `--wm-frame-inset`).
+
+If upstream retunes its ladder, these must be re-derived. The e2e assertion
+"upstream header fits the content well instead of being clipped" measures
+`.header` `scrollWidth` against `clientWidth` and fails if it regresses.
+
+### `data-theme` is upstream's, not ours
+
+Our attribute is `data-wm-theme`. `data-theme` belongs to upstream: it is set
+before first paint by the prepaint script in `index.html` and read across
+`main.css` for light/dark. An early draft of the engine wrote the theme id into
+`data-theme`, which would have silently clobbered upstream's colour scheme on
+every theme switch.
 
 ---
 
