@@ -1,0 +1,1 @@
+AGPL-3.0-only, inherited from [koala73/worldmonitor](https://github.com/koala73/worldmonitor) · Source of truth for this wiki lives in [`docs/wiki/`](https://github.com/mtaylor45/worldmonitor/tree/main/docs/wiki)

@@ -43,12 +43,15 @@ The whole project follows from one idea:
 | Palette choice | 🟡 Awaiting the physical panel |
 | Local voice assistant | 🟡 Built / hardware verification pending |
 | Voice commands | 🟡 Built / hardware verification pending |
-| Proactive alerts | ⚪ Planned |
+| Wake word — "Computer" | 🟡 Detector built / model needs training |
+| Proactive alerts | 🟡 Built / thresholds need calibration |
 | Home-lab telemetry | ⚪ Planned |
 
-**P0 — Foundation** and **P1 — LCARS Theme** are complete and verified. P2 has
-not started. See **[SCOPE.md](SCOPE.md)** for the authoritative roadmap and
-acceptance criteria.
+**P0 — Foundation** and **P1 — LCARS Theme** are complete and verified. **P2**,
+**P3** and **P4-1** are built and tested; what remains for each is a
+measurement, not a feature — see *[What is left](#what-is-left)*. See
+**[SCOPE.md](SCOPE.md)** for the authoritative roadmap and acceptance
+criteria.
 
 ---
 
@@ -91,15 +94,32 @@ scrollbars, pixel-specific layout. Initial hardware is an Intel NUC6i7KYK
 
 ### 🎙️ Local voice assistant
 
-The eventual voice system runs entirely on local infrastructure:
+The voice system runs entirely on local infrastructure:
 
 ```
-Microphone → openWakeWord → faster-whisper → Ollama
+Microphone → openWakeWord → faster-whisper → llama.cpp
            → Action / Context System → Text-to-Speech → Audio Output
 ```
 
 No cloud AI service is in the runtime path. The voice system understands a
 structured representation of the dashboard rather than scraping the rendered DOM.
+
+The wake word is **"Computer"**, which is the hard case: openWakeWord ships no
+pretrained model for it, and because the word occurs in ordinary speech the
+false-accept rate is the design problem rather than the miss rate. See
+*[The wake word](#the-wake-word)*.
+
+### 🚨 Proactive alerts
+
+When the Composite Instability Index crosses a threshold the panel stops being
+something you have to look at. The frame goes to alert colours, the alert tone
+sounds, and the assistant speaks unprompted:
+
+> "Alert. Instability index for Sudan has risen to eighty-seven."
+
+**This is the feature that changes what the product is.** A dashboard you have
+to look at competes with everything else in the room; one that speaks when
+something changes is a monitor in the real sense.
 
 ---
 
@@ -344,8 +364,11 @@ worldmonitor/
 │   │   ├── client.ts        WebSocket client, reconnect, degradation
 │   │   └── index.ts         indicator, transcript, chirp wiring
 │   │
-│   └── context/
-│       └── snapshot.ts      structured dashboard state for the model
+│   ├── context/
+│   │   └── snapshot.ts      structured dashboard state for the model
+│   │
+│   └── alert/
+│       └── index.ts         the data-wm-alert attribute and its tone
 │
 ├── public/
 │   ├── fonts/               self-hosted Antonio + OFL
@@ -361,13 +384,16 @@ worldmonitor/
 ├── voice-sidecar/           local voice assistant (container)
 │   ├── wm_voice/
 │   │   ├── phrasing.py      the register: validator, templates, numerals
+│   │   ├── audio.py         one microphone, fanned out; pre-roll buffer
+│   │   ├── wake.py          "Computer": threshold, streak, refractory
+│   │   ├── alerts.py        thresholds, hysteresis, quiet hours, wording
 │   │   ├── pipeline.py      turn orchestration and the latency budget
 │   │   ├── protocol.py      wire protocol, mirrored in src/voice/
 │   │   ├── commands.py      the P3 boundary: contract and validator
 │   │   ├── router.py        intent tiers; tier 0 answers with no model
 │   │   ├── tools.py         UI tools dispatched, data tools fetched
-│   │   ├── server.py        WebSocket fan-out, push-to-talk, context
-│   │   ├── adapters.py      wake / STT / LLM / TTS / audio
+│   │   ├── server.py        WebSocket fan-out, wake loop, alert poller
+│   │   ├── adapters.py      STT / LLM / TTS / audio out
 │   │   └── signal_chain.py  post-TTS ffmpeg chain
 │   └── tests/
 │
@@ -493,12 +519,16 @@ npx vitest run --config vitest.dom.config.mts tests/dom/theme-engine.test.mts
 npx vitest run --config vitest.dom.config.mts tests/dom/theme-token-contract.test.mts
 
 # Acceptance: pixel fidelity, cycle stability, persistence, assets,
-# 12-column grid, kiosk geometry, design-system conformance, voice wiring
+# 12-column grid, kiosk geometry, design-system conformance, voice wiring,
+# and that the alert state really repaints the frame
 npx playwright test e2e/theme-engine-p0.spec.ts
 
 # Voice sidecar - standard library only, no pytest to install
 cd voice-sidecar && python3 -m unittest discover -s tests -t .
 ```
+
+Current counts: **207** sidecar tests, **815** DOM tests across 95 files, **36**
+end-to-end tests.
 
 Run all three after every upstream merge. The token test catches upstream
 retuning a value our extraction records; the e2e catches upstream changing the
@@ -543,7 +573,7 @@ composition with no overflow in either direction.
 ### P2 — Voice, read-only · built, pending hardware
 
 ```
-openWakeWord → faster-whisper → Ollama → TTS
+openWakeWord → faster-whisper → llama.cpp → TTS
 ```
 
 Wake word, push-to-talk, live transcript, voice-state indicator, local
@@ -558,6 +588,36 @@ button drives real push-to-talk, and refuses audibly when no sidecar answers.
 3 seconds from end-of-speech to first audio on CPU, the wake word surviving the
 assistant's own TTS playback (the AEC test), and no false wake in 24 hours of
 room noise. See `voice-sidecar/README.md`.
+
+#### The wake word
+
+The wake word is **"Computer"**, and two facts about it shape the whole
+detector.
+
+**openWakeWord ships no pretrained model for it.** The bundled set is `alexa`,
+`hey_jarvis`, `hey_mycroft`, `hey_rhasspy`. "Computer" has to be trained —
+openWakeWord's own pipeline does this from synthetic speech with no recordings
+required, and `docs/VOICE-CHARACTER.md` carries the procedure. Until that model
+exists, `WM_WAKE_MODEL` is empty, the detector reports itself unavailable and
+**says so loudly at startup** rather than sitting silent and looking like a
+system that is listening. Push-to-talk is unaffected.
+
+**"Computer" is a single common word, so false accepts are the design problem,
+not misses.** It occurs in ordinary speech in a way "hey jarvis" never does.
+Three filters, all tunable, all tuned by the 24-hour test and nothing else:
+
+| Control | Default | What it removes |
+|---|---|---|
+| `WM_WAKE_THRESHOLD` | `0.7` | Low-confidence matches — openWakeWord's own default is 0.5 |
+| `WM_WAKE_CONSECUTIVE` | `2` | Single-frame spikes, which is what most false accepts look like |
+| `WM_WAKE_REFRACTORY` | `2.0` | The tail of one word firing a second turn |
+
+Two supporting pieces matter as much as the detector. **One microphone, opened
+once**: the detector listens continuously while capture records on demand, and
+two components opening an input stream independently is how you get "device
+busy" on the machine nobody is sitting at. And **pre-roll** — detection only
+fires once the whole word has been heard, so without a ring buffer of recent
+audio "Computer, show the map" reaches recognition as "ow the map".
 
 ### P3 — Voice commands · built, pending hardware
 
@@ -598,16 +658,78 @@ model at all; questions and briefings take 8–12 s, because at ~4 tok/s an 8B
 cannot do better and pretending otherwise would ship a missed target. The
 arithmetic and the tier table are in `voice-sidecar/README.md`.
 
-### P4 — Future features
+### P4-1 — Proactive alerts · built, pending calibration
 
-Proactive alert states · scheduled spoken briefings · presence-aware attract mode
-· conversational follow-up · voice-driven map control · panel focus brackets ·
-home-lab telemetry · PADD companion interface · historical time-scrubbing · a
-second structurally different theme.
+The feature that changes what the product is. A dashboard that merely displays
+information still requires attention; one that recognises significant changes
+and speaks is an actual monitoring system.
 
-The most strategically interesting is **proactive alerting**. A dashboard that
-merely displays information still requires attention. A dashboard that recognises
-significant changes and speaks becomes an actual monitoring system.
+```text
+GET /api/intelligence/v1/get-risk-scores
+      → AlertWatcher      thresholds, hysteresis, quiet hours
+      → alert frame       frame goes red, alert tone sounds once
+      → templated speech  "Alert. Instability index for Sudan has risen to eighty-seven."
+```
+
+**The sidecar decides; the dashboard renders.** Thresholds, hysteresis, quiet
+hours and the readings all live in `voice-sidecar/wm_voice/alerts.py`. The
+dashboard receives one boolean and sets `data-wm-alert`.
+
+That is deliberately unlike an *action*, which both sides validate. An action is
+a language model's claim about what the user wanted, so it is checked twice; an
+alert is arithmetic on a number the sidecar fetched, and a second opinion in the
+browser would mean a copy of the thresholds drifting out of step with the ones
+that actually fire.
+
+**The failure mode is not "it did not fire".** It is "it fires often enough that
+you stop looking", and four guards exist for that and nothing else:
+
+| Guard | Why |
+|---|---|
+| **Hysteresis** (`WM_ALERT_CLEAR_MARGIN`) | A score oscillating around 85 against a threshold of 85 fires, clears, fires and clears |
+| **A floor between *spoken* alerts** (`WM_ALERT_MIN_INTERVAL`) | Several regions cross at once. The display carries all of them; the voice speaks the most severe |
+| **Quiet hours** (`WM_ALERT_QUIET_HOURS`) | Silences the voice, **never the display**. An alert raised at 3am is still on the panel at 3am |
+| **Trustworthiness** | A `degraded` or `stale` reading raises nothing — and clears nothing. Dropping a live alert because the upstream cache hiccuped is the failure a monitor exists to prevent |
+
+**No model runs on this path.** The wording is templated: a model would cost
+eight to twelve seconds on this CPU to produce a sentence that was always going
+to be one of two shapes, drift out of register over a long session, and
+eventually read the number back wrong. The phrasing layer still runs, because it
+runs on every spoken line.
+
+Thresholds are user-editable and forgiving — `WM_ALERT_RULES="*>85, Sudan>75,
+Taiwan+12"`, where a named region beats the catch-all, `>` is a level and `+` is
+a 24-hour rise (a jump from 40 to 55 is news even though 55 clears no level
+line). A malformed entry is logged and skipped: turning a typo in an environment
+variable into a panel that will not start is strictly worse than running the
+rules that parsed.
+
+### P4 — Remaining candidates
+
+Scheduled spoken briefings · presence-aware attract mode · conversational
+follow-up · voice-driven map control · panel focus brackets · home-lab telemetry
+· PADD companion interface · historical time-scrubbing · a second structurally
+different theme.
+
+<a id="what-is-left"></a>
+
+### What is left
+
+Every phase is built. What remains is measurement, a training run, and a panel:
+
+| | Blocked on |
+|---|---|
+| Sub-3s voice latency on CPU | The NUC. `voice-sidecar/bench_latency.py` measures it |
+| Wake word surviving TTS playback | The audio hardware. Responds = real full-duplex AEC; ignores you until playback ends = ducking, and the device is the wrong category |
+| No false wake in 24 hours | A day in the room the panel lives in |
+| A trained "Computer" model | A training run, not code |
+| Alert thresholds | A week of real readings. `*>85` is a guess, as are the margin, the poll interval and the spoken-alert floor |
+| The palette choice | A legibility test at 2.5 m. `preview/lcars-preview.html` exists to settle it |
+| The kiosk profile | Hardware. The panel is unsourced |
+| The cap-height factor (1.36) | Recorded as a token, not yet applied — it is calibrated for Swiss 911, and Antonio has different vertical metrics |
+
+None of these is a missing feature. Each is a number that can only be taken off
+the physical panel, in the room it lives in.
 
 ### Home-lab integration
 
@@ -655,11 +777,12 @@ superseded by anything here.
 | [`preview/lcars-style-guide.html`](preview/lcars-style-guide.html) | The design system rendered: elbow anatomy, both palettes, type scale, component gallery, motion demos |
 | [`preview/lcars-preview.html`](preview/lcars-preview.html) | The frame at 1280×720 with a palette toggle, for the on-panel decision |
 | [`docs/LCARS-ASSETS.md`](docs/LCARS-ASSETS.md) | Asset research, take/skip rationale, licensing |
-| [`docs/VOICE-CHARACTER.md`](docs/VOICE-CHARACTER.md) | Phrasing, prosody, signal chain, engine comparison |
+| [`docs/VOICE-CHARACTER.md`](docs/VOICE-CHARACTER.md) | Phrasing, prosody, signal chain, engine comparison, and how to train the "Computer" wake model |
 | [`docs/P0-PORT.md`](docs/P0-PORT.md) | Default-theme extraction and acceptance criteria |
 | [`docs/UPSTREAM-DIFF.md`](docs/UPSTREAM-DIFF.md) | Every upstream file touched, and why |
 | [`deploy/kiosk/README.md`](deploy/kiosk/README.md) | Kiosk install and operational notes |
 | [`voice-sidecar/README.md`](voice-sidecar/README.md) | Voice sidecar: run, configure, and what only hardware can verify |
+| [`docs/wiki/`](docs/wiki/) | Source of the [project wiki](https://github.com/mtaylor45/worldmonitor/wiki) — configuration reference, merge routine, wake-word training, alert tuning, troubleshooting |
 
 ---
 
