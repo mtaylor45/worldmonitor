@@ -1,9 +1,8 @@
-
-# LCARS World Monitor
+LCARS World Monitor
 
 A self-hosted, always-on situational-awareness dashboard with an LCARS-inspired interface, designed for a dedicated 1280×720 kiosk display and eventually controlled by a local voice assistant.
 
-LCARS World Monitor is a personal fork of World Monitor⁠￼, extending the upstream dashboard with a dedicated theme architecture, LCARS visual system, kiosk deployment, and a roadmap toward fully local voice interaction.
+LCARS World Monitor is a personal fork of World Monitor, extending the upstream dashboard with a dedicated theme architecture, LCARS visual system, kiosk deployment, and a roadmap toward fully local voice interaction.
 
 The project is designed around a simple idea:
 
@@ -11,7 +10,7 @@ A situational-awareness display should be something you glance at — and eventu
 
 ⸻
 
-## Status
+Status
 
 Area	Status
 Upstream World Monitor integration	🟢 Active
@@ -30,308 +29,8 @@ Home-lab telemetry	⚪ Planned
 
 The current implementation corresponds primarily to P0 — Foundation and the core P1 — LCARS Theme work.
 
-See SCOPE.md⁠￼ for the authoritative project roadmap and acceptance criteria.
+See SCOPE.md for the authoritative project roadmap and acceptance criteria.
 
-
-# Quick Start
-
-Prerequisites
-
-For local development, you will need:
-
-* Node.js 20+
-* npm
-* Git
-* A modern Chromium/Chrome, Firefox, or Safari browser
-
-For the intended kiosk deployment, the target environment is Ubuntu Server 26.04 LTS with Chromium running under cage/Wayland.
-
-Note: The local voice-assistant components are not required for the current P0/P1 dashboard and LCARS functionality. Voice support is part of the planned P2/P3 implementation.
-
-⸻
-
-1. Clone the repository
-
-git clone https://github.com/mtaylor45/worldmonitor.git
-cd worldmonitor
-
-If you are working on the LCARS development branch:
-
-git checkout claude/lcars-world-monitor-n32ah2
-
-⸻
-
-2. Install dependencies
-
-npm install
-
-⸻
-
-3. Configure environment variables
-
-World Monitor uses environment variables for some data providers and optional integrations.
-
-Start by copying the example configuration if one is present:
-
-cp .env.example .env
-
-Then edit .env:
-
-nano .env
-
-Only configure the API keys and services you actually intend to use. The LCARS theme itself does not require external API credentials.
-
-If your checkout does not contain .env.example, consult the upstream World Monitor documentation and the existing environment configuration in the repository before creating one manually.
-
-⸻
-
-4. Start the development server
-
-npm run dev
-
-Vite will normally make the development server available at:
-
-http://localhost:5173
-
-Open that address in your browser.
-
-⸻
-
-5. Test the LCARS theme
-
-Once the dashboard is running, the theme engine can be controlled programmatically.
-
-The supported theme identifiers currently include:
-
-default
-lcars
-lcars-bright
-
-The LCARS themes can also be selected using the theme controls provided by the application.
-
-For development, the theme engine supports URL-based theme selection, making it convenient to test a specific theme directly.
-
-For example:
-
-http://localhost:5173/?theme=lcars
-
-and:
-
-http://localhost:5173/?theme=lcars-bright
-
-If the application is already running, changing the theme does not require restarting the development server.
-
-⸻
-
-6. Run the test suite
-
-Before making changes, run the project’s automated checks:
-
-npm test
-
-For browser/end-to-end testing:
-
-npx playwright test
-
-The P0 theme-engine acceptance tests are located under:
-
-e2e/theme-engine-p0.spec.ts
-
-These tests verify the most important theme-engine guarantees, including:
-
-* Default-theme compatibility
-* Theme switching
-* Theme persistence
-* Repeated theme cycling
-* DOM stability
-
-⸻
-
-7. Build for production
-
-Create a production build with:
-
-npm run build
-
-The generated application will be placed in the project’s normal Vite build output directory.
-
-To preview the production build locally:
-
-npm run preview
-
-⸻
-
-Kiosk Installation
-
-The intended production deployment is a dedicated Ubuntu Server machine connected to a 1280×720 display.
-
-The current kiosk configuration lives under:
-
-deploy/kiosk/
-
-The kiosk architecture is:
-
-Ubuntu Server
-      ↓
-cage / Wayland
-      ↓
-Chromium
-      ↓
-World Monitor
-      ↓
-1280×720 display
-
-The kiosk should run without:
-
-* Desktop environment overhead
-* Browser controls
-* Scrollbars
-* Window decorations
-* Manual application startup
-
-Kiosk prerequisites
-
-Install the basic kiosk components:
-
-sudo apt update
-sudo apt install -y chromium cage
-
-Depending on the Ubuntu package configuration, the Chromium package may be named differently. Verify the installed executable with:
-
-which chromium
-which chromium-browser
-
-The kiosk configuration in deploy/kiosk/ should be treated as the source of truth for the actual startup command and systemd configuration rather than manually reconstructing the command line.
-
-⸻
-
-Production deployment model
-
-For a dedicated kiosk, the recommended deployment flow is:
-
-Git repository
-     ↓
-Production build
-     ↓
-Web server / container
-     ↓
-Chromium kiosk
-     ↓
-1280×720 display
-
-The kiosk itself should not need Node.js or the development server.
-
-Node.js is required for building the application, while the resulting production assets can be served by a lightweight HTTP server or the project’s intended container deployment.
-
-⸻
-
-Docker Deployment
-
-The project can also be deployed as a containerized web application.
-
-A typical workflow is:
-
-npm ci
-npm run build
-
-Then build the project’s production container according to the repository’s container configuration.
-
-For the intended self-hosted environment, the resulting image can be pushed to a private container registry and deployed through the existing Docker infrastructure.
-
-The kiosk remains a separate concern: it consumes the deployed web application through Chromium.
-
-⸻
-
-Updating an Existing Installation
-
-For a development checkout:
-
-git fetch origin
-git pull --ff-only
-npm ci
-npm run build
-
-For a production deployment, rebuild the application/container after updating the repository and redeploy the resulting version.
-
-When updating the fork from upstream, follow the fork discipline documented in:
-
-docs/UPSTREAM-DIFF.md
-
-and:
-
-SCOPE.md
-
-Do not blindly rebase or overwrite LCARS-specific changes with upstream changes.
-
-⸻
-
-Troubleshooting
-
-The development server will not start
-
-Verify Node.js:
-
-node --version
-npm --version
-
-Then reinstall dependencies:
-
-rm -rf node_modules
-npm ci
-npm run dev
-
-The LCARS theme does not appear
-
-Confirm that the application was started from the LCARS fork rather than an unmodified upstream checkout.
-
-Then verify the theme implementation under:
-
-src/themes/
-
-and inspect the browser console for theme-engine errors.
-
-The display overflows at 1280×720
-
-This is particularly important for LCARS development.
-
-Resize the browser to exactly:
-
-1280 × 720
-
-and check for both horizontal and vertical overflow.
-
-Do not solve a fixed-display layout problem by adding responsive breakpoints unless the feature specifically requires them. The primary kiosk is intentionally pixel-targeted.
-
-Kiosk Chromium does not start
-
-Check:
-
-systemctl status <kiosk-service>
-
-Then inspect the service logs:
-
-journalctl -u <kiosk-service> -b
-
-Verify that cage and Chromium are installed and that the kiosk user has permission to access the display/session.
-
-⸻
-
-Next Steps
-
-Once the dashboard is running, the recommended development path is:
-
-1. Confirm the default theme renders correctly.
-2. Switch to lcars.
-3. Test lcars-bright.
-4. Resize the browser to exactly 1280×720.
-5. Run the P0 Playwright tests.
-6. Review docs/DESIGN-SYSTEM.md.
-7. Review docs/UPSTREAM-DIFF.md before modifying upstream code.
-8. Use SCOPE.md to determine the next planned milestone.
-
-For contributors, the most important rule is simple:
-
-Keep the upstream application recognizable, keep fork-specific code isolated, and make the LCARS layer removable without having to rebuild World Monitor from scratch.
 ⸻
 
 What This Project Adds
@@ -650,7 +349,7 @@ Upstream Relationship
 
 This repository is a fork of:
 
-koala73/worldmonitor⁠￼
+koala73/worldmonitor
 
 World Monitor is actively maintained and has a large upstream history. Keeping the fork mergeable is therefore treated as a first-class engineering constraint.
 
@@ -660,7 +359,7 @@ The project follows these rules:
 2. Changes to upstream files should be limited to small, deliberate integration seams.
 3. Upstream files should never be reformatted merely for style.
 4. DOM attributes and hooks should be preferred over invasive upstream modifications.
-5. Every upstream file touched by fork-specific functionality should be documented in docs/UPSTREAM-DIFF.md⁠￼.
+5. Every upstream file touched by fork-specific functionality should be documented in docs/UPSTREAM-DIFF.md.
 
 To configure the upstream remote:
 
@@ -909,13 +608,13 @@ Documentation
 The repository contains deeper documentation for specific areas of the system.
 
 Document	Purpose
-SCOPE.md⁠￼	Authoritative roadmap, architecture, constraints, and acceptance criteria
-docs/DESIGN-SYSTEM.md⁠￼	LCARS visual and implementation specification
-docs/LCARS-ASSETS.md⁠￼	Asset research, licensing, and integration guidance
-docs/P0-PORT.md⁠￼	P0 theme-engine implementation and verification
-docs/UPSTREAM-DIFF.md⁠￼	Fork-specific changes to upstream files
-docs/VOICE-CHARACTER.md⁠￼	Voice interaction and character design
-docs/WORKING-BRIEF.md⁠￼	Engineering guidance and project working rules
+SCOPE.md	Authoritative roadmap, architecture, constraints, and acceptance criteria
+docs/DESIGN-SYSTEM.md	LCARS visual and implementation specification
+docs/LCARS-ASSETS.md	Asset research, licensing, and integration guidance
+docs/P0-PORT.md	P0 theme-engine implementation and verification
+docs/UPSTREAM-DIFF.md	Fork-specific changes to upstream files
+docs/VOICE-CHARACTER.md	Voice interaction and character design
+docs/WORKING-BRIEF.md	Engineering guidance and project working rules
 
 ⸻
 
@@ -1018,8 +717,8 @@ And eventually:
 
 Upstream Project
 
-World Monitor⁠￼
+World Monitor
 
 Repository
 
-github.com/mtaylor45/worldmonitor⁠￼
+github.com/mtaylor45/worldmonitor
