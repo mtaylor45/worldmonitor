@@ -450,6 +450,138 @@ test.describe('P1 — LCARS assets and grid', () => {
   });
 });
 
+test.describe('Design system conformance', () => {
+  test('the field is lifted, never pure black', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars-bright');
+    // "A single step of lift stops an emissive panel reading as a dead region,
+    // and it gives the gutter a faint presence rather than a void."
+    const field = await page.locator('.lcars-frame').evaluate(
+      (el) => getComputedStyle(el).backgroundColor,
+    );
+    expect(field).toBe('rgb(9, 9, 9)');
+  });
+
+  test('the elbow is one block and one carve, at 2.40 : 1', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const elbow = await page.locator('.lcars-elbow').evaluate((el) => {
+      const own = getComputedStyle(el);
+      const carve = getComputedStyle(el, '::after');
+      return {
+        outer: Number.parseFloat(own.borderTopLeftRadius),
+        carveRadius: Number.parseFloat(carve.borderTopLeftRadius),
+        carveWidth: Number.parseFloat(carve.width),
+        carveColour: carve.backgroundColor,
+        carveContent: carve.content,
+        field: getComputedStyle(document.querySelector('.lcars-frame')!).backgroundColor,
+      };
+    });
+
+    // The carve exists at all — this is the form that identifies the language,
+    // and a plain rounded corner would pass every other assertion here.
+    expect(elbow.carveContent).not.toBe('none');
+    expect(elbow.carveWidth).toBeGreaterThan(0);
+    // It is filled with the FIELD colour, which is what makes it read as cut
+    // out of the block rather than drawn on top of it.
+    expect(elbow.carveColour).toBe(elbow.field);
+    // Ratio, not absolutes: closer reads as a plain corner, wider as a bubble.
+    expect(elbow.outer / elbow.carveRadius).toBeCloseTo(2.4, 2);
+  });
+
+  test('holds the type scale, and the 13px floor', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const sizes = await page.evaluate(() => {
+      const px = (sel: string) => {
+        const el = document.querySelector<HTMLElement>(sel);
+        return el ? Math.round(Number.parseFloat(getComputedStyle(el).fontSize)) : null;
+      };
+      return {
+        title: px('.lcars-header-title'),
+        label: px('.lcars-rail-label'),
+        micro: px('.lcars-rail-code'),
+      };
+    });
+
+    expect(sizes.title).toBe(44);
+    expect(sizes.label).toBe(15);
+    expect(sizes.micro).toBe(13);
+  });
+
+  test('the rail label sits bottom-right and its code bottom-left', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    const geom = await page.locator('.lcars-rail-btn').first().evaluate((el) => {
+      const btn = el.getBoundingClientRect();
+      const code = el.querySelector('.lcars-rail-code')!.getBoundingClientRect();
+      const label = el.querySelector('.lcars-rail-label')!.getBoundingClientRect();
+      return {
+        codeFromLeft: code.left - btn.left,
+        labelFromRight: btn.right - label.right,
+        codeFromFloor: btn.bottom - code.bottom,
+        labelFromFloor: btn.bottom - label.bottom,
+      };
+    });
+
+    // Code left, label right, both on the block floor.
+    expect(geom.codeFromLeft).toBeLessThan(geom.labelFromRight + 40);
+    expect(geom.labelFromRight).toBeLessThan(20);
+    expect(Math.abs(geom.codeFromFloor - geom.labelFromFloor)).toBeLessThan(3);
+  });
+
+  test('the status tag stays rectangular', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+    // "The only rectangular element, which is exactly why the eye finds it in
+    // a field of pills."
+    const radius = await page.locator('.lcars-voice').evaluate(
+      (el) => getComputedStyle(el).borderRadius,
+    );
+    expect(radius).toBe('0px');
+  });
+
+  test('spends salmon and red on nothing but status', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // The one non-negotiable rule in the colour contract. Checked against the
+    // chrome at rest: the alert state is their sole legitimate use, so at
+    // idle neither may appear on any frame element.
+    const offenders = await page.evaluate(() => {
+      const salmon = 'rgb(204, 102, 102)';
+      const critical = 'rgb(255, 51, 0)';
+      const bad: string[] = [];
+      document.querySelectorAll<HTMLElement>('.lcars-frame > *, .lcars-frame > * > *').forEach(
+        (el) => {
+          const bg = getComputedStyle(el).backgroundColor;
+          if (bg === salmon || bg === critical) bad.push(`${el.className}: ${bg}`);
+        },
+      );
+      return bad;
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  test('cuts rather than fades — no transitions inside the frame', async ({ page }) => {
+    await loadDashboard(page, '?wm-theme=lcars');
+
+    // "LCARS cuts, it does not fade." Upstream ships transitions of its own,
+    // and inheriting them inside the frame is the most theme-breaking thing
+    // that can happen without anyone editing the stylesheet.
+    const animated = await page.evaluate(() => {
+      const bad: string[] = [];
+      document.querySelectorAll<HTMLElement>('.lcars-frame *').forEach((el) => {
+        const d = getComputedStyle(el).transitionDuration;
+        if (d && d !== '0s' && !d.split(', ').every((v) => v === '0s')) {
+          bad.push(`${el.tagName}.${el.className}: ${d}`);
+        }
+      });
+      return bad.slice(0, 10);
+    });
+
+    expect(animated).toEqual([]);
+  });
+});
+
 test.describe('P0 — kiosk geometry', () => {
   test('neither theme overflows the 1280x720 panel horizontally', async ({ page }) => {
     for (const theme of ['default', 'lcars', 'lcars-bright']) {

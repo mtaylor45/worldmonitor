@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LCARS design system</title>
+<style>
+/* Self-hosted Antonio, resolved relative to this file. The CDN link this
+   replaced would have made the guide unopenable on the kiosk, which is the
+   one machine where a design decision actually gets settled — and it would
+   have contradicted the project's own "zero network dependency for chrome"
+   rule in the document that states it. Antonio is a variable font, so one
+   file covers the whole 400-700 range the guide uses. */
+@font-face {
+  font-family: 'Antonio';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: block;
+  src: url('../public/fonts/antonio-latin.woff2') format('woff2');
+}
+
+:root{
+  /* ---- Palette A · Broadcast (TNG screens, high contrast) ---- */
+  --orange:#ff9c00; --tan:#ffcc66; --peach:#e8a87c; --gold:#ffcc00;
+  --peri:#9999ff;   --ice:#99ccff;  --lilac:#cc99cc; --mauve:#cfa8d4;
+  --salmon:#cc6666; --cream:#ffeebb; --red:#ff3300;  --green:#99cc99;
+  --field:#000;     --lift:#090909;  --well:#121212;
+
+  /* ---- Palette B · Drexler (screen-accurate, muted) ---- */
+  --d1:#ec943a; --d2:#eb9870; --d3:#c47d69; --d4:#d29a7f; --d5:#faa41b;
+  --d6:#c082a9; --d7:#9c698a; --d8:#b6a5d1; --d9:#8b72aa;
+
+  --gut:5px;          /* the black gutter. one value, never negotiated */
+  --rail:150px;
+  --row:34px;
+  --elbow:72px;
+  --elbow-in:30px;
+  --cap:999px;
+
+  --f:'Antonio','Oswald','Arial Narrow',sans-serif;
+  --t-micro:13px; --t-label:15px; --t-body:17px;
+  --t-read:26px;  --t-head:30px;  --t-title:44px;
+  --track:.08em;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--field);color:var(--tan);
+  font-family:var(--f);font-size:var(--t-body);
+  -webkit-font-smoothing:antialiased;
+  padding:var(--gut);
+  user-select:none;
+}
+.wrap{max-width:1280px;margin:0 auto}
+
+/* ══ FRAME PRIMITIVES ══════════════════════════════════════ */
+
+.bar{background:var(--tan);border-radius:var(--cap)}
+.capL{border-radius:var(--cap) 0 0 var(--cap)}
+.capR{border-radius:0 var(--cap) var(--cap) 0}
+
+/* The elbow. Outer corner sweeps wide; the inner corner is carved by a
+   field-coloured pseudo-element carrying its own radius. */
+.elbow{position:relative;background:var(--orange);
+  border-top-left-radius:var(--elbow)}
+.elbow::after{content:'';position:absolute;right:0;bottom:0;
+  width:var(--elbow-in);height:var(--elbow-in);
+  background:var(--field);border-top-left-radius:var(--elbow-in)}
+
+/* ══ PAGE HEADER ═══════════════════════════════════════════ */
+
+.top{display:flex;gap:var(--gut);height:64px;margin-bottom:var(--gut)}
+.top .elbow{flex:0 0 var(--rail)}
+.top .hbar{flex:1;display:flex;align-items:center;justify-content:flex-end;
+  gap:16px;padding:0 24px;background:var(--tan);
+  border-radius:0 var(--cap) var(--cap) 0}
+.top h1{font-size:var(--t-title);font-weight:700;line-height:1;
+  color:var(--field);letter-spacing:.01em}
+.top .sub{font-size:var(--t-label);letter-spacing:var(--track);
+  color:var(--field);opacity:.7}
+.top .tail{flex:0 0 70px;background:var(--lilac);border-radius:var(--cap)}
+
+/* ══ LAYOUT ════════════════════════════════════════════════ */
+
+.body{display:flex;gap:var(--gut)}
+.rail{flex:0 0 var(--rail);display:flex;flex-direction:column;gap:var(--gut);
+  position:sticky;top:var(--gut);align-self:flex-start;max-height:calc(100vh - 2*var(--gut))}
+.rail .stub{height:18px;background:var(--orange)}
+.rail .foot{flex:1;min-height:60px;background:var(--orange);
+  border-bottom-left-radius:var(--elbow)}
+.rbtn{height:var(--row);display:flex;align-items:flex-end;justify-content:space-between;
+  gap:6px;padding:0 10px 4px;border:0;font-family:var(--f);
+  color:var(--field);cursor:pointer;text-align:right;text-decoration:none}
+.rbtn .n{font-size:var(--t-micro);opacity:.5}
+.rbtn .l{font-size:var(--t-label);font-weight:600;letter-spacing:var(--track)}
+.rbtn:hover{filter:brightness(1.2)}
+.rbtn:focus-visible{outline:3px solid var(--ice);outline-offset:-3px}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;gap:26px}
+
+/* ══ SECTIONS ══════════════════════════════════════════════ */
+
+section{scroll-margin-top:var(--gut)}
+.shead{display:flex;align-items:baseline;gap:12px;
+  border-bottom:2px solid var(--gold);padding-bottom:3px;margin-bottom:14px}
+.shead h2{font-size:var(--t-head);font-weight:600;color:var(--gold);
+  letter-spacing:.02em;line-height:1}
+.shead .id{margin-left:auto;font-size:var(--t-micro);color:var(--salmon);
+  letter-spacing:var(--track)}
+p{font-size:var(--t-body);line-height:1.32;color:var(--cream);max-width:74ch}
+p + p{margin-top:9px}
+p b{color:var(--gold);font-weight:600}
+.note{color:var(--peri)}
+
+/* ══ HERO · ELBOW ANATOMY ══════════════════════════════════ */
+
+.anat{display:grid;grid-template-columns:400px 1fr;gap:26px;align-items:start}
+.anat-stage{background:var(--well);padding:30px;position:relative}
+.demo-elbow{width:230px;height:150px;background:var(--orange);
+  border-top-left-radius:var(--elbow);position:relative}
+.demo-elbow::after{content:'';position:absolute;right:0;bottom:0;
+  width:var(--elbow-in);height:var(--elbow-in);
+  background:var(--well);border-top-left-radius:var(--elbow-in)}
+.tick{position:absolute;font-size:var(--t-micro);color:var(--ice);
+  letter-spacing:var(--track);white-space:nowrap}
+.t1{top:16px;left:120px}
+.t2{bottom:44px;left:232px}
+.t3{bottom:14px;left:30px}
+dl.spec{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;
+  font-size:var(--t-label);margin-top:14px}
+dl.spec dt{color:var(--peri);letter-spacing:var(--track)}
+dl.spec dd{color:var(--gold);font-variant-numeric:tabular-nums}
+
+/* ══ SWATCHES ══════════════════════════════════════════════ */
+
+.sw{display:grid;grid-template-columns:repeat(6,1fr);gap:var(--gut)}
+.sw > div{padding:8px 10px;min-height:76px;display:flex;flex-direction:column;
+  justify-content:space-between;color:var(--field)}
+.sw .hex{font-size:var(--t-micro);font-variant-numeric:tabular-nums;opacity:.72}
+.sw .use{font-size:var(--t-label);font-weight:600;letter-spacing:var(--track);line-height:1.05}
+.sw .dark{color:var(--cream)}
+
+/* ══ TYPE SCALE ════════════════════════════════════════════ */
+
+.scale{display:grid;grid-template-columns:auto auto 1fr;gap:6px 20px;align-items:baseline}
+.scale .px{font-size:var(--t-micro);color:var(--peri);font-variant-numeric:tabular-nums}
+.scale .nm{font-size:var(--t-micro);color:var(--salmon);letter-spacing:var(--track)}
+.scale .sp{color:var(--tan);line-height:1.1}
+
+/* ══ COMPONENT GALLERY ═════════════════════════════════════ */
+
+.gal{display:grid;grid-template-columns:repeat(2,1fr);gap:22px}
+.cell{background:var(--well);padding:14px}
+.cell > h3{font-size:var(--t-label);letter-spacing:var(--track);color:var(--salmon);
+  font-weight:600;margin-bottom:10px}
+.cell > .cap-note{font-size:var(--t-micro);color:var(--peri);margin-top:10px;line-height:1.3}
+
+/* labelled bar — the label punches a hole through the block */
+.lbar{display:flex;height:var(--row);gap:var(--gut);align-items:stretch}
+.lbar .seg{background:var(--tan);flex:1}
+.lbar .txt{background:var(--well);display:flex;align-items:flex-end;
+  padding:0 8px 3px;font-size:var(--t-label);font-weight:600;
+  letter-spacing:var(--track);color:var(--tan)}
+
+/* data row */
+.drow{display:flex;align-items:center;gap:var(--gut);height:28px;margin-bottom:var(--gut)}
+.drow .chip{width:14px;align-self:stretch}
+.drow .val{font-size:var(--t-read);font-weight:600;color:var(--gold);
+  font-variant-numeric:tabular-nums;width:52px;text-align:right;line-height:1}
+.drow .track{flex:1;align-self:stretch;display:flex;align-items:center;
+  padding:0 8px;border-radius:0 var(--cap) var(--cap) 0;
+  font-size:var(--t-micro);color:var(--field);font-variant-numeric:tabular-nums}
+
+/* meter */
+.meter{display:flex;gap:3px;height:96px;align-items:flex-end}
+.meter i{flex:1;background:var(--peri);display:block}
+
+/* number dump */
+.dump{font-size:11px;line-height:1.25;color:var(--peach);
+  font-variant-numeric:tabular-nums;letter-spacing:.02em;
+  word-spacing:5px;max-height:76px;overflow:hidden}
+
+/* status tag */
+.tags{display:flex;gap:var(--gut);flex-wrap:wrap}
+.tag{padding:3px 12px 2px;font-size:var(--t-label);font-weight:600;
+  letter-spacing:var(--track);color:var(--field)}
+
+/* pill button */
+.pills{display:flex;gap:10px;flex-wrap:wrap}
+.pill{border:0;border-radius:var(--cap);padding:7px 26px 6px;
+  font-family:var(--f);font-size:var(--t-label);font-weight:600;
+  letter-spacing:var(--track);color:var(--field);cursor:pointer}
+.pill:hover{filter:brightness(1.2)}
+.pill:focus-visible{outline:3px solid var(--ice);outline-offset:2px}
+
+/* interrupt tab */
+.itab{display:flex;gap:var(--gut);align-items:stretch;height:110px}
+.itab .spine{flex:0 0 26px;background:var(--salmon);display:flex;flex-direction:column;gap:var(--gut)}
+.itab .spine i{flex:1;background:var(--salmon)}
+.itab .spine .cut{flex:0 0 30px;background:var(--gold);display:flex;
+  align-items:center;justify-content:center;font-size:var(--t-micro);color:var(--field)}
+
+/* ══ PAGE ARCHETYPES ═══════════════════════════════════════ */
+
+.arch{display:grid;grid-template-columns:repeat(2,1fr);gap:22px}
+.arch .cell{padding:14px}
+.mock{background:var(--field);height:172px;display:flex;gap:3px;padding:3px;
+  border:1px solid #1c1c1c}
+.mock .mr{flex:0 0 26px;display:flex;flex-direction:column;gap:3px}
+.mock .mr i{flex:1;background:var(--tan)}
+.mock .mc{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.mock .mt{height:13px;background:var(--orange);flex:0 0 auto}
+.mock .mg{flex:1;display:grid;gap:3px;min-height:0}
+.mock .mg > i{background:#1e1e1e;border-left:3px solid var(--peri);min-height:0}
+.arch h3{font-size:var(--t-read);color:var(--gold);font-weight:600;
+  letter-spacing:.02em;margin-bottom:3px;line-height:1}
+.arch .role{font-size:var(--t-micro);color:var(--salmon);letter-spacing:var(--track);margin-bottom:10px}
+.arch p{font-size:var(--t-label);line-height:1.3}
+
+/* ══ MOTION ════════════════════════════════════════════════ */
+
+.motion{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.mstage{background:var(--well);padding:14px;min-height:132px}
+.mstage h3{font-size:var(--t-label);letter-spacing:var(--track);color:var(--salmon);
+  font-weight:600;margin-bottom:10px}
+.mstage p{font-size:var(--t-micro);color:var(--peri);line-height:1.3;margin-top:9px}
+
+.blink i{display:block;height:22px;background:var(--peri);margin-bottom:3px}
+.blink i.on{background:var(--gold)}
+
+.sweepbar{height:22px;background:#1e1e1e;overflow:hidden}
+.sweepbar i{display:block;height:100%;width:0;background:var(--ice)}
+
+.bootgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px}
+.bootgrid i{height:22px;background:#1a1a1a}
+.bootgrid i.lit{background:var(--tan)}
+
+.alertbox{height:56px;background:var(--well);display:flex;align-items:center;
+  justify-content:center;font-size:var(--t-label);font-weight:600;
+  letter-spacing:var(--track);color:var(--peri)}
+.alertbox.hot{background:var(--red);color:var(--field)}
+
+.cycler{font-size:var(--t-read);color:var(--gold);font-variant-numeric:tabular-nums;
+  letter-spacing:.04em}
+
+/* ══ RULES ═════════════════════════════════════════════════ */
+
+.rules{display:grid;grid-template-columns:1fr 1fr;gap:var(--gut)}
+.rules > div{padding:14px}
+.rules .do{background:#0d1408;border-left:var(--gut) solid var(--green)}
+.rules .dont{background:#140a0a;border-left:var(--gut) solid var(--salmon)}
+.rules h3{font-size:var(--t-label);letter-spacing:var(--track);font-weight:600;margin-bottom:9px}
+.rules .do h3{color:var(--green)} .rules .dont h3{color:var(--salmon)}
+.rules li{font-size:var(--t-label);line-height:1.34;color:var(--cream);
+  list-style:none;padding-left:15px;position:relative;margin-bottom:6px}
+.rules li::before{content:'';position:absolute;left:0;top:8px;width:7px;height:7px}
+.rules .do li::before{background:var(--green)}
+.rules .dont li::before{background:var(--salmon)}
+
+/* ══ FOOTER ════════════════════════════════════════════════ */
+
+.foot-bar{display:flex;gap:var(--gut);height:38px;margin-top:26px}
+.foot-bar .a{flex:0 0 var(--rail);background:var(--orange);
+  border-radius:0 0 0 var(--elbow)}
+.foot-bar .b{flex:1;background:var(--peach);border-radius:0 var(--cap) var(--cap) 0;
+  display:flex;align-items:center;justify-content:flex-end;padding:0 24px;
+  font-size:var(--t-label);letter-spacing:var(--track);color:var(--field)}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+@media (max-width:900px){
+  .anat,.gal,.arch,.rules{grid-template-columns:1fr}
+  .motion{grid-template-columns:1fr}
+  .sw{grid-template-columns:repeat(3,1fr)}
+  .rail{display:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="elbow"></div>
+  <div class="hbar">
+    <span class="sub">DESIGN SYSTEM 2.5.1</span>
+    <h1>LCARS</h1>
+  </div>
+  <div class="tail"></div>
+</header>
+
+<div class="body">
+
+  <nav class="rail">
+    <div class="stub"></div>
+    <a class="rbtn" href="#anatomy"   style="background:var(--tan)"><span class="n">4471</span><span class="l">ANATOMY</span></a>
+    <a class="rbtn" href="#color"     style="background:var(--peri)"><span class="n">2839</span><span class="l">COLOR</span></a>
+    <a class="rbtn" href="#type"      style="background:var(--tan)"><span class="n">7106</span><span class="l">TYPE</span></a>
+    <a class="rbtn" href="#parts"     style="background:var(--lilac)"><span class="n">5522</span><span class="l">PARTS</span></a>
+    <a class="rbtn" href="#pages"     style="background:var(--peri)"><span class="n">9314</span><span class="l">PAGES</span></a>
+    <a class="rbtn" href="#motion"    style="background:var(--ice)"><span class="n">1687</span><span class="l">MOTION</span></a>
+    <a class="rbtn" href="#rules"     style="background:var(--cream)"><span class="n">3045</span><span class="l">RULES</span></a>
+    <div class="foot"></div>
+  </nav>
+
+  <main class="main">
+
+  <!-- ═══ ANATOMY ═══ -->
+  <section id="anatomy">
+    <div class="shead"><h2>The elbow</h2><span class="id">SEC 01</span></div>
+    <div class="anat">
+      <div class="anat-stage">
+        <div class="demo-elbow">
+          <span class="tick t1">OUTER SWEEP · 72PX</span>
+          <span class="tick t2">INNER CARVE · 30PX</span>
+          <span class="tick t3">ARM ≥ RAIL WIDTH</span>
+        </div>
+      </div>
+      <div>
+        <p>Every LCARS screen is a frame first and a canvas second. The elbow is
+        the joint where the horizontal header meets the vertical rail, and it is
+        the single form that identifies the language. Get it right and the
+        screen reads correctly before any colour lands.</p>
+        <p>It is built from one block and one carve. The outer corner takes a
+        wide radius. The inner corner is cut by a pseudo-element filled with the
+        <b>field colour</b>, carrying its own smaller radius. No clip-path, no
+        SVG — the construction stays crisp at any scale and costs nothing to
+        composite.</p>
+        <p>The ratio matters more than the absolute values. The outer sweep runs
+        roughly <b>2.4×</b> the inner carve. Push them closer together and the
+        joint reads as a plain rounded corner; push them apart and it reads as a
+        bubble.</p>
+        <dl class="spec">
+          <dt>OUTER RADIUS</dt><dd>72px</dd>
+          <dt>INNER RADIUS</dt><dd>30px</dd>
+          <dt>RATIO</dt><dd>2.40 : 1</dd>
+          <dt>GUTTER</dt><dd>5px</dd>
+          <dt>MIN ARM</dt><dd>= rail width</dd>
+        </dl>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ COLOR ═══ -->
+  <section id="color">
+    <div class="shead"><h2>Colour</h2><span class="id">SEC 02</span></div>
+    <p>On screen, LCARS colour was decorative — Michael Okuda assigned it for
+    rhythm, not meaning. A working dashboard cannot afford that. Each hue below
+    carries <b>one job</b>, and the discipline of never spending a colour on
+    decoration is what keeps the screen legible at a glance.</p>
+    <p style="margin-bottom:14px">The strongest rule here is negative:
+    <b>salmon and red are status only.</b> The moment either appears as
+    ornament, an alert stops meaning anything.</p>
+
+    <div class="sw" style="margin-bottom:6px">
+      <div style="background:#ff9c00"><span class="use">Frame spine</span><span class="hex">#FF9C00</span></div>
+      <div style="background:#ffcc66"><span class="use">Nav blocks</span><span class="hex">#FFCC66</span></div>
+      <div style="background:#9999ff"><span class="use">Data blocks</span><span class="hex">#9999FF</span></div>
+      <div style="background:#cc99cc"><span class="use">Secondary</span><span class="hex">#CC99CC</span></div>
+      <div style="background:#99ccff"><span class="use">Info / inert</span><span class="hex">#99CCFF</span></div>
+      <div style="background:#ffeebb"><span class="use">Neutral bar</span><span class="hex">#FFEEBB</span></div>
+    </div>
+    <div class="sw">
+      <div style="background:#ffcc00"><span class="use">Readouts</span><span class="hex">#FFCC00</span></div>
+      <div style="background:#e8a87c"><span class="use">Header sweep</span><span class="hex">#E8A87C</span></div>
+      <div style="background:#99cc99"><span class="use">Nominal</span><span class="hex">#99CC99</span></div>
+      <div style="background:#cc6666"><span class="use">Warning</span><span class="hex">#CC6666</span></div>
+      <div style="background:#ff3300"><span class="use">Critical</span><span class="hex">#FF3300</span></div>
+      <div style="background:#090909" class="dark"><span class="use">Field</span><span class="hex">#090909</span></div>
+    </div>
+
+    <p style="margin-top:16px">The field is <b>#090909</b>, not pure black. A
+    single step of lift stops an emissive panel reading as a dead region, and it
+    gives the gutter a faint presence rather than a void.</p>
+
+    <div class="shead" style="margin-top:22px"><h2>Variant · Drexler</h2><span class="id">SEC 02B</span></div>
+    <p style="margin-bottom:14px">The screen-accurate set, attributed to scenic
+    artist Doug Drexler. More authentic, noticeably lower contrast. Ship both
+    and decide on the actual panel from across the room — desaturated ochre
+    photographs beautifully and can be hard to read at two metres.</p>
+    <div class="sw">
+      <div style="background:#ec943a"><span class="use">A1</span><span class="hex">#EC943A</span></div>
+      <div style="background:#eb9870"><span class="use">A2</span><span class="hex">#EB9870</span></div>
+      <div style="background:#c47d69"><span class="use">A3</span><span class="hex">#C47D69</span></div>
+      <div style="background:#faa41b"><span class="use">A5</span><span class="hex">#FAA41B</span></div>
+      <div style="background:#c082a9"><span class="use">A6</span><span class="hex">#C082A9</span></div>
+      <div style="background:#b6a5d1"><span class="use">A8</span><span class="hex">#B6A5D1</span></div>
+    </div>
+  </section>
+
+  <!-- ═══ TYPE ═══ -->
+  <section id="type">
+    <div class="shead"><h2>Type</h2><span class="id">SEC 03</span></div>
+    <p>One family, ultra-condensed, all capitals. Canon used Swiss 911 Ultra
+    Compressed; <b>Antonio</b> is the free substitute and the only face in the
+    system. Condensed capitals are what let a label sit inside a 34px block
+    without the block growing to accommodate it.</p>
+    <p style="margin-bottom:16px">Cap height must equal block height. Because
+    the em box carries leading the condensed face doesn't use, set
+    <b>font-size = row-height × 1.36</b> and verify optically. Padding is not the
+    fix.</p>
+    <div class="scale">
+      <span class="px">44</span><span class="nm">TITLE</span><span class="sp" style="font-size:44px;font-weight:700">LONG RANGE SCAN</span>
+      <span class="px">30</span><span class="nm">SECTION</span><span class="sp" style="font-size:30px;font-weight:600;color:var(--gold)">SENSOR ARRAY</span>
+      <span class="px">26</span><span class="nm">READOUT</span><span class="sp" style="font-size:26px;font-weight:600;color:var(--gold)">61.4</span>
+      <span class="px">17</span><span class="nm">BODY</span><span class="sp" style="font-size:17px;color:var(--cream)">Three escalation signals detected.</span>
+      <span class="px">15</span><span class="nm">LABEL</span><span class="sp" style="font-size:15px;font-weight:600;letter-spacing:var(--track)">MODE SELECT</span>
+      <span class="px">13</span><span class="nm">MICRO</span><span class="sp" style="font-size:13px;letter-spacing:var(--track);color:var(--peach)">47-1904 · 2839 · 6491</span>
+    </div>
+    <p style="margin-top:16px"><b>13px is the floor.</b> At 163 PPI on a 9-inch
+    panel an ultra-condensed face loses stroke definition below it, and the
+    numerals go first.</p>
+  </section>
+
+  <!-- ═══ PARTS ═══ -->
+  <section id="parts">
+    <div class="shead"><h2>Parts</h2><span class="id">SEC 04</span></div>
+    <div class="gal">
+
+      <div class="cell">
+        <h3>LABELLED BAR</h3>
+        <div class="lbar">
+          <div class="txt">MODE SELECT</div>
+          <div class="seg"></div>
+          <div class="txt" style="color:var(--peri)">LCARS</div>
+          <div class="seg" style="background:var(--peri);flex:0 0 90px;border-radius:0 var(--cap) var(--cap) 0"></div>
+        </div>
+        <div class="cap-note">The label does not sit on the bar — it interrupts
+        it. Text carries the field colour, punching a hole through the block.
+        This is the detail most reproductions miss.</div>
+      </div>
+
+      <div class="cell">
+        <h3>RAIL BUTTON</h3>
+        <div style="display:flex;flex-direction:column;gap:var(--gut)">
+          <div class="rbtn" style="background:var(--tan)"><span class="n">4471</span><span class="l">BRIEF</span></div>
+          <div class="rbtn" style="background:var(--peri)"><span class="n">2839</span><span class="l">GLOBE</span></div>
+          <div class="rbtn" style="background:var(--lilac)"><span class="n">5522</span><span class="l">STRESS</span></div>
+        </div>
+        <div class="cap-note">Label bottom-right, code bottom-left, both baseline
+        aligned to the block floor. Codes are decorative in canon — derive them
+        from the button id so they hold still across reloads.</div>
+      </div>
+
+      <div class="cell">
+        <h3>DATA ROW</h3>
+        <div class="drow"><i class="chip" style="background:var(--lilac)"></i><span class="val">87</span><span class="track" style="background:var(--salmon);width:87%">SUDAN</span></div>
+        <div class="drow"><i class="chip" style="background:var(--salmon)"></i><span class="val">81</span><span class="track" style="background:var(--salmon);width:81%">MYANMAR</span></div>
+        <div class="drow"><i class="chip" style="background:var(--orange)"></i><span class="val">64</span><span class="track" style="background:var(--tan);width:64%">LEBANON</span></div>
+        <div class="drow"><i class="chip" style="background:var(--lilac)"></i><span class="val">41</span><span class="track" style="background:var(--peri);width:41%">GEORGIA</span></div>
+        <div class="cap-note">Length is the datum, colour is the threshold. The
+        right cap is a full pill so the bar reads as a measured quantity rather
+        than a cropped one.</div>
+      </div>
+
+      <div class="cell">
+        <h3>METER</h3>
+        <div class="meter">
+          <i style="height:38%"></i><i style="height:56%"></i><i style="height:44%"></i>
+          <i style="height:71%;background:var(--ice)"></i><i style="height:88%;background:var(--ice)"></i>
+          <i style="height:62%"></i><i style="height:47%"></i><i style="height:29%"></i>
+        </div>
+        <div class="cap-note">Segmented columns, flat tops, no gradient and no
+        rounding. LCARS meters are lit cells, not drawn shapes.</div>
+      </div>
+
+      <div class="cell">
+        <h3>NUMBER DUMP</h3>
+        <div class="dump">
+          8057 0728 2103 87091 47 92306 547 4800 3374 1035 40128 7752<br>
+          1631 5087 807 878 13 91825 827 5109 700 11458 864802 546 19829<br>
+          4210 36 445 4392 82 6883 4581 9188 3610 71606 347710 822 89<br>
+          5301 68722 170 443 916 61338 82391 8790 3614 65463 800165 723
+        </div>
+        <div class="cap-note">Texture, not content. Use it to fill dead space in
+        the frame — never where a reader might mistake it for data. Cap it at
+        four rows; more reads as a crash dump.</div>
+      </div>
+
+      <div class="cell">
+        <h3>STATUS TAG</h3>
+        <div class="tags">
+          <span class="tag" style="background:var(--green)">NOMINAL</span>
+          <span class="tag" style="background:var(--tan)">STANDBY</span>
+          <span class="tag" style="background:var(--salmon)">DEGRADED</span>
+          <span class="tag" style="background:var(--red);color:var(--cream)">CRITICAL</span>
+        </div>
+        <div class="cap-note">Square corners, no radius. Tags are the one
+        element that stays rectangular, which is exactly why the eye finds them
+        in a field of pills.</div>
+      </div>
+
+      <div class="cell">
+        <h3>PILL BUTTON</h3>
+        <div class="pills">
+          <button class="pill" style="background:var(--orange)">INITIALIZE</button>
+          <button class="pill" style="background:var(--peri)">QUIT</button>
+          <button class="pill" style="background:var(--tan)">ACKNOWLEDGE</button>
+        </div>
+        <div class="cap-note">Reserved for actions that commit something. Rail
+        buttons navigate; pills act. Two per screen is plenty.</div>
+      </div>
+
+      <div class="cell">
+        <h3>INTERRUPT TAB</h3>
+        <div class="itab">
+          <div class="spine"><i></i><div class="cut">55</div><i></i></div>
+          <div style="flex:1;background:var(--well);display:flex;align-items:flex-end;padding:8px;font-size:var(--t-micro);color:var(--peri);letter-spacing:var(--track)">CONTENT WELL</div>
+        </div>
+        <div class="cap-note">A short block of contrasting colour breaking a
+        continuous rail. Structurally decorative, but useful — put it where a
+        reader's eye needs an anchor point on a long vertical run.</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══ PAGES ═══ -->
+  <section id="pages">
+    <div class="shead"><h2>Page archetypes</h2><span class="id">SEC 05</span></div>
+    <p style="margin-bottom:16px">Five layouts, each with a distinct structural
+    signature so the page is identifiable from the doorway before any label is
+    readable. The frame colour and the block rhythm carry that — not the
+    content.</p>
+    <div class="arch">
+
+      <div class="cell">
+        <div class="mock">
+          <div class="mr"><i></i><i style="background:var(--peri)"></i><i></i><i style="background:var(--lilac)"></i><i></i></div>
+          <div class="mc">
+            <div class="mt"></div>
+            <div class="mg" style="grid-template-columns:2fr 1fr;grid-template-rows:1fr 1fr 1fr">
+              <i style="grid-column:1;grid-row:1"></i><i style="grid-column:2;grid-row:1/span 2;border-left-color:var(--lilac)"></i>
+              <i style="grid-column:1;grid-row:2"></i>
+              <i style="grid-column:1/span 2;grid-row:3;border-left-color:var(--salmon)"></i>
+            </div>
+          </div>
+        </div>
+        <h3 style="margin-top:12px">OPS</h3>
+        <div class="role">DEFAULT · MIXED DENSITY</div>
+        <p>The landing state. Balanced blocks, no single dominant panel, alert
+        feed pinned along the bottom edge where peripheral vision catches
+        colour change. This is the page that must survive being glanced at.</p>
+      </div>
+
+      <div class="cell">
+        <div class="mock">
+          <div class="mr"><i style="background:var(--peach)"></i><i style="background:var(--salmon)"></i><i style="background:var(--peach)"></i><i style="background:var(--salmon)"></i></div>
+          <div class="mc">
+            <div class="mt" style="background:var(--peach)"></div>
+            <div class="mg" style="grid-template-rows:auto 1fr">
+              <i style="height:14px;border-left-color:var(--peach)"></i>
+              <i style="background:#0e0e28;border-left-color:var(--salmon)"></i>
+            </div>
+          </div>
+        </div>
+        <h3 style="margin-top:12px">LONG RANGE SCAN</h3>
+        <div class="role">MAP DOMINANT · MUTED</div>
+        <p>One panel takes the whole well; everything else compresses into the
+        frame. Runs the Drexler palette so the map's own colour carries. A
+        segmented scrubber sits directly above the well.</p>
+      </div>
+
+      <div class="cell">
+        <div class="mock">
+          <div class="mr"><i style="background:var(--gold)"></i><i style="background:var(--gold)"></i><i style="background:var(--peri)"></i><i style="background:var(--gold)"></i></div>
+          <div class="mc">
+            <div class="mt" style="background:var(--gold)"></div>
+            <div class="mg" style="grid-template-columns:1fr 1fr 1fr 1fr">
+              <i style="border-left-color:var(--ice)"></i><i style="border-left-color:var(--ice)"></i>
+              <i style="border-left-color:var(--peri)"></i><i style="border-left-color:var(--peri)"></i>
+            </div>
+          </div>
+        </div>
+        <h3 style="margin-top:12px">ENGINEERING</h3>
+        <div class="role">SYMMETRIC · METERED</div>
+        <p>Vertical meters in matched columns, gold frame. The symmetry is the
+        signal: a broken column in an otherwise regular grid is visible from
+        across the room without reading a number.</p>
+      </div>
+
+      <div class="cell">
+        <div class="mock">
+          <div class="mr"><i style="background:var(--lilac)"></i><i style="background:var(--peri)"></i><i style="background:var(--lilac)"></i><i style="background:var(--peri)"></i></div>
+          <div class="mc">
+            <div class="mt" style="background:var(--lilac)"></div>
+            <div class="mg" style="grid-template-rows:repeat(5,1fr)">
+              <i style="border-left-color:var(--cream)"></i><i style="border-left-color:var(--cream)"></i>
+              <i style="border-left-color:var(--cream)"></i><i style="border-left-color:var(--cream)"></i>
+              <i style="border-left-color:var(--cream)"></i>
+            </div>
+          </div>
+        </div>
+        <h3 style="margin-top:12px">COMMS</h3>
+        <div class="role">LIST · UNIFORM ROWS</div>
+        <p>Feed traffic in even rows, lilac frame, newest at the top. The only
+        page where uniformity is correct — irregular rows here would imply a
+        hierarchy the content doesn't have.</p>
+      </div>
+
+      <div class="cell" style="grid-column:1/-1">
+        <div class="mock" style="height:130px">
+          <div class="mr" style="flex:0 0 22px"><i style="background:var(--tan)"></i><i style="background:var(--tan)"></i><i style="background:var(--peri)"></i></div>
+          <div class="mc">
+            <div class="mt" style="background:var(--peach)"></div>
+            <div class="mg" style="grid-template-columns:1fr 2fr 1fr">
+              <i style="border-left-color:var(--tan)"></i>
+              <i style="border-left-color:var(--gold)"></i>
+              <i style="border-left-color:var(--peri)"></i>
+            </div>
+          </div>
+          <div class="mr" style="flex:0 0 22px"><i style="background:var(--peri)"></i><i style="background:var(--tan)"></i></div>
+        </div>
+        <h3 style="margin-top:12px">LIBRARY</h3>
+        <div class="role">DENSE · DUAL RAIL</div>
+        <p>The only archetype with rails on both edges, framing three columns of
+        dense text and tabular data. Reserved for pages someone will actually
+        stand and read — reference material, system detail, history. Everywhere
+        else, a second rail steals width the content needs.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══ MOTION ═══ -->
+  <section id="motion">
+    <div class="shead"><h2>Motion</h2><span class="id">SEC 06</span></div>
+    <p>The governing rule: <b>LCARS cuts, it does not fade.</b> The originals
+    were physical backlit panels — a state change was a lamp switching, so it
+    was instantaneous. No easing curves, no transforms, no cross-fades. Four
+    kinds of motion are permitted, and every one of them reports something.</p>
+    <p style="margin-bottom:16px" class="note">Everything below honours
+    <code>prefers-reduced-motion</code>. On an always-on panel in living space,
+    ambient motion is a cost paid every hour of the day.</p>
+
+    <div class="motion">
+      <div class="mstage">
+        <h3>BLOCK BLINK</h3>
+        <div class="blink" id="blink"><i></i><i></i><i></i><i></i></div>
+        <p>A single block changing colour on a hard cut. Signals activity on
+        that channel. One block at a time, never a cascade.</p>
+      </div>
+
+      <div class="mstage">
+        <h3>SWEEP</h3>
+        <div class="sweepbar"><i id="sweep"></i></div>
+        <p>Linear fill, constant rate, no easing. Only for genuine progress —
+        an indeterminate sweep is a lie about a known quantity.</p>
+      </div>
+
+      <div class="mstage">
+        <h3>SEQUENTIAL REVEAL</h3>
+        <div class="bootgrid" id="boot">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <p>Blocks light in order at ~40ms intervals. Reserved for boot and for
+        waking from ambient. The system's one theatrical moment.</p>
+        <button class="pill" style="background:var(--tan);margin-top:9px" id="replay">REPLAY</button>
+      </div>
+
+      <div class="mstage">
+        <h3>ALERT PULSE</h3>
+        <div class="alertbox" id="alert">STANDING BY</div>
+        <p>Hard alternation between critical red and field, roughly 1Hz. The
+        only motion permitted to run unattended, and only while the condition
+        holds.</p>
+      </div>
+
+      <div class="mstage">
+        <h3>DIGIT CYCLE</h3>
+        <div class="cycler" id="cycle">47-1904-2839</div>
+        <p>Decorative codes reshuffling. Use on ornamental filler only. Never on
+        a code beside a control someone is learning to find.</p>
+      </div>
+
+      <div class="mstage">
+        <h3>FORBIDDEN</h3>
+        <p style="color:var(--salmon);font-size:var(--t-label);line-height:1.34;margin-top:0">
+        Fades between states. Scale or translate transforms. Easing curves of
+        any kind. Hover transitions on every block. Skeleton shimmer. Anything
+        that suggests a surface is soft, elastic, or physical — these are lit
+        panels, not objects.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ RULES ═══ -->
+  <section id="rules">
+    <div class="shead"><h2>Rules</h2><span class="id">SEC 07</span></div>
+    <div class="rules">
+      <div class="do">
+        <h3>DO</h3>
+        <ul>
+          <li>Hold the 5px gutter absolutely. Two coloured blocks never touch.</li>
+          <li>Round every outer corner of the frame; leave inner corners carved or square.</li>
+          <li>Align labels bottom-right inside their block, on the block floor.</li>
+          <li>Let text interrupt a bar rather than sit on top of it.</li>
+          <li>Build the frame first. Content fills what the frame leaves.</li>
+          <li>Give each page a distinct frame colour and block rhythm.</li>
+          <li>Keep status tags rectangular so they stand out among pills.</li>
+          <li>Derive decorative codes deterministically so they hold still.</li>
+          <li>Lift the field to #090909 rather than pure black.</li>
+        </ul>
+      </div>
+      <div class="dont">
+        <h3>DON'T</h3>
+        <ul>
+          <li>Spend salmon or red on anything that isn't a status.</li>
+          <li>Fade, ease, scale or slide. State changes are cuts.</li>
+          <li>Put a border or shadow on a block — the gutter is the separation.</li>
+          <li>Mix a second typeface. One condensed family, all caps.</li>
+          <li>Drop below 13px on a 163-PPI panel.</li>
+          <li>Let number dumps sit where they could be mistaken for data.</li>
+          <li>Round a status tag or square a frame corner.</li>
+          <li>Use more than two pill buttons on one screen.</li>
+          <li>Add a second rail outside the LIBRARY archetype.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<footer class="foot-bar">
+  <div class="a"></div>
+  <div class="b">LCARS DESIGN SYSTEM · 2.5.1 · 1280 × 720 TARGET</div>
+</footer>
+
+</div>
+
+<script>
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* BLOCK BLINK — one block at a time, hard cut */
+const blinks = [...document.querySelectorAll('#blink i')];
+if (!reduced) setInterval(() => {
+  blinks.forEach(b => b.classList.remove('on'));
+  blinks[Math.floor(Math.random() * blinks.length)].classList.add('on');
+}, 700);
+
+/* SWEEP — linear, constant rate, steps to avoid implying easing */
+const sweep = document.getElementById('sweep');
+if (!reduced) {
+  let p = 0;
+  setInterval(() => { p = (p + 4) % 104; sweep.style.width = Math.min(p, 100) + '%'; }, 90);
+}
+
+/* SEQUENTIAL REVEAL — the boot sequence */
+const cells = [...document.querySelectorAll('#boot i')];
+function boot() {
+  cells.forEach(c => c.classList.remove('lit'));
+  cells.forEach((c, i) => setTimeout(() => c.classList.add('lit'), i * 40));
+}
+document.getElementById('replay').addEventListener('click', boot);
+if (!reduced) { boot(); setInterval(boot, 5200); }
+
+/* ALERT PULSE — hard alternation, only while the condition holds */
+const alertEl = document.getElementById('alert');
+if (!reduced) {
+  let hot = false, ticks = 0;
+  setInterval(() => {
+    ticks++;
+    // Idle for a spell, then run the alert, so both states are visible.
+    if (ticks % 14 < 7) { alertEl.classList.remove('hot'); alertEl.textContent = 'STANDING BY'; return; }
+    hot = !hot;
+    alertEl.classList.toggle('hot', hot);
+    alertEl.textContent = 'ALERT · INSTABILITY 87';
+  }, 500);
+}
+
+/* DIGIT CYCLE — ornamental filler only */
+const cyc = document.getElementById('cycle');
+const rnd = n => String(Math.floor(Math.random() * 9 * 10 ** (n - 1) + 10 ** (n - 1)));
+if (!reduced) setInterval(() => {
+  cyc.textContent = `${rnd(2)}-${rnd(4)}-${rnd(4)}`;
+}, 1100);
+</script>
+</body>
+</html>

@@ -28,18 +28,24 @@ export type LcarsPalette = 'drexler' | 'bright';
  * blue should not have to lie about it.
  */
 interface LcarsRamp {
+  /** Field. #090909, never pure black — see below. */
   bg: string;
   'bg-panel': string;
+  /** Frame spine. Structural only. */
   primary: string;
   tan: string;
   lilac: string;
   periwinkle: string;
   ice: string;
   cream: string;
+  /** Header sweep. */
+  peach: string;
+  /** Numeric values only. */
   readout: string;
   text: string;
   'text-dim': string;
   'text-invert': string;
+  /** Status: nominal. */
   ok: string;
   'voice-idle': string;
   'voice-listening': string;
@@ -59,13 +65,14 @@ interface LcarsRamp {
  */
 const DREXLER: LcarsRamp = {
   bg: '#090909',
-  'bg-panel': '#0d0d0d',
+  'bg-panel': '#121212',
   primary: '#faa41b',
   tan: '#ec943a',
   lilac: '#c082a9',
   periwinkle: '#b6a5d1',
   ice: '#8b72aa',
-  cream: '#faa41b',
+  cream: '#d29a7f',
+  peach: '#eb9870',
   readout: '#ffcc00',
   text: '#e8c07a',
   'text-dim': '#c89a4a',
@@ -76,20 +83,28 @@ const DREXLER: LcarsRamp = {
   'voice-speaking': '#faa41b',
 };
 
-/** Variant B — bright. Higher contrast, matches the reference screenshot. */
+/**
+ * Variant B — Broadcast. TNG screens, high contrast. The design system's
+ * primary palette, and each hue carries exactly one job.
+ *
+ * The field is #090909, NOT pure black: one step of lift stops an emissive
+ * panel reading as a dead region, and it gives the gutter a faint presence
+ * rather than a void.
+ */
 const BRIGHT: LcarsRamp = {
-  bg: '#000000',
-  'bg-panel': '#000000',
+  bg: '#090909',
+  'bg-panel': '#121212',
   primary: '#ff9c00',
   tan: '#ffcc66',
   lilac: '#cc99cc',
   periwinkle: '#9999ff',
   ice: '#99ccff',
   cream: '#ffeebb',
+  peach: '#e8a87c',
   readout: '#ffcc00',
   text: '#ffcc66',
-  'text-dim': '#c89a4a',
-  'text-invert': '#000000',
+  'text-dim': '#e8a87c',
+  'text-invert': '#090909',
   ok: '#99cc99',
   'voice-idle': '#5a5a7a',
   'voice-listening': '#99ccff',
@@ -97,17 +112,22 @@ const BRIGHT: LcarsRamp = {
 };
 
 /**
- * Alert salmon. Identical in both variants and deliberately outside the tone
- * ramp: SCOPE.md §2 makes salmon alert-only, and the moment it becomes
- * decorative the theme stops communicating.
+ * The status colours. Identical in both variants and deliberately outside the
+ * tone ramp.
+ *
+ * The design system's one non-negotiable rule: **salmon and red are status
+ * only.** The moment either appears as ornament, an alert stops meaning
+ * anything. Nothing in this theme's chrome may reference them — the alert
+ * state (below) is their sole legitimate use.
  */
 const ALERT_SALMON = '#cc6666';
+const CRITICAL_RED = '#ff3300';
 
 export function lcarsTokens(palette: LcarsPalette): ThemeTokens {
   const ramp = palette === 'drexler' ? DREXLER : BRIGHT;
 
   return {
-    color: { ...ramp, alert: ALERT_SALMON },
+    color: { ...ramp, alert: ALERT_SALMON, critical: CRITICAL_RED },
 
     font: {
       display: "'Antonio', 'Oswald', 'Arial Narrow', sans-serif",
@@ -118,10 +138,12 @@ export function lcarsTokens(palette: LcarsPalette): ThemeTokens {
       'size-label': '15px',
       'size-body': '17px',
       'size-readout': '26px',
-      'size-title': '38px',
+      'size-head': '30px',
+      'size-title': '44px',
       'tracking-label': '0.08em',
       weight: '400',
-      'weight-bold': '600',
+      'weight-semi': '600',
+      'weight-bold': '700',
       // Cap-height match, per louh/lcars. The 1.36 factor is calibrated for
       // Swiss 911; Antonio has different vertical metrics and P1 must
       // re-measure it against rendered text rather than inherit it on faith.
@@ -130,12 +152,16 @@ export function lcarsTokens(palette: LcarsPalette): ThemeTokens {
 
     space: {
       // The black gap between blocks. This one value carries the look.
+      // Absolute. Two coloured blocks never touch.
       gutter: '5px',
       block: '10px',
+      // The guide specifies 150px and allows 128px at 1280 "if content is
+      // tight". It is: the well is already 1137px and upstream's header only
+      // just fits after its degradation ladder re-runs. 128 stays.
       rail: '128px',
       'rail-btn': '34px',
-      header: '54px',
-      footer: '30px',
+      header: '64px',
+      footer: '38px',
     },
 
     radius: {
@@ -145,8 +171,11 @@ export function lcarsTokens(palette: LcarsPalette): ThemeTokens {
       // as the block grows (docs/LCARS-ASSETS.md). This value covers the
       // fixed-height corners.
       cap: '999px',
-      elbow: '68px',
-      'elbow-inner': '28px',
+      // 72 : 30 is exactly 2.40 : 1. The guide is explicit that the RATIO
+      // carries the form — closer together and the joint reads as a plain
+      // rounded corner, further apart and it reads as a bubble.
+      elbow: '72px',
+      'elbow-inner': '30px',
       // LCARS blocks are square except where they cap. Not a rounded-card UI.
       block: '0px',
     },
@@ -182,11 +211,18 @@ export function lcarsTokens(palette: LcarsPalette): ThemeTokens {
       border: 'var(--wm-color-tan)',
       'border-strong': 'var(--wm-color-primary)',
       'border-subtle': '#1a1a1a',
-      'panel-border': 'var(--wm-color-tan)',
+      // The gutter is the separation. "Put a border or shadow on a block" is
+      // an explicit DON'T, so upstream's per-panel border is painted out to
+      // the field colour rather than left tan — the 5px gutter plus the
+      // panel's own lift (#121212 on #090909) does the work, which is exactly
+      // the contrast the design system's own cells use.
+      'panel-border': 'var(--wm-color-bg)',
 
       text: 'var(--wm-color-text)',
       'text-secondary': 'var(--wm-color-text-dim)',
       accent: 'var(--wm-color-readout)',
+      // Numeric readouts are gold, everywhere, per the colour contract.
+      green: 'var(--wm-color-ok)',
 
       'font-body-base': 'var(--wm-font-body)',
     },

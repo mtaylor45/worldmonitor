@@ -158,6 +158,17 @@ upstream's own `--dashboard-panel-row-*` tokens. It deliberately does NOT
 touch `--map-col-width`: that split is user-resizable and persisted, and
 snapping it to the module would fight a feature for a notional gain.
 
+### Killing transitions inside the frame
+
+`src/themes/lcars/lcars.css` sets `transition: none !important` on everything
+inside `.lcars-frame`.
+
+"LCARS cuts, it does not fade" is a design rule, but enforcing it needs a rule
+that reaches upstream's markup, because upstream ships transitions and skeleton
+shimmer of its own and the dashboard now renders *inside* our frame. Inheriting
+them is the most theme-breaking thing that can happen without anyone editing a
+file. Scoped to the frame and to the LCARS theme, so `default` is untouched.
+
 ### `data-theme` is upstream's, not ours
 
 Our attribute is `data-wm-theme`. `data-theme` belongs to upstream: it is set

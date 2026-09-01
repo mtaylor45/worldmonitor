@@ -47,6 +47,8 @@ Log every upstream file touched in `docs/UPSTREAM-DIFF.md`.
 | `src/context/` | Panel state snapshot for the LLM (P3) |
 | `deploy/kiosk/` | `cage` + Chromium + systemd kiosk profile |
 | `preview/lcars-preview.html` | Standalone 1280x720 mock, no build step |
+| `preview/lcars-style-guide.html` | The design system, rendered. Open it when a decision needs to be *seen* |
+| `docs/DESIGN-SYSTEM.md` | The same rules as a checklist |
 | `docs/UPSTREAM-DIFF.md` | Every upstream file touched, and why |
 | `docs/P0-PORT.md` | Token extraction procedure and acceptance criteria |
 
@@ -76,14 +78,37 @@ copying upstream's `:root` values in — that passes the screenshot diff on the
 day it is written and silently diverges the first time upstream retunes a
 colour. See `docs/P0-PORT.md` for the full argument.
 
+**`docs/DESIGN-SYSTEM.md` governs the LCARS theme.** It is the checklist;
+`preview/lcars-style-guide.html` is the reference to look at. Conformance is
+asserted in `e2e/theme-engine-p0.spec.ts` rather than left to review — the
+field lift, the elbow ratio and its carve, the type scale, square status tags,
+the absence of transitions inside the frame, and that salmon and red appear
+nowhere in the chrome at rest.
+
+Four rules from it are worth restating here, because they are the ones easiest
+to break by accident:
+
+- **The elbow is one block and one carve.** A field-coloured `::after` with its
+  own smaller radius cuts the inner corner. A plain rounded corner is not an
+  elbow, and it is the single form that identifies the language.
+- **The field is `#090909`, never pure black.** One step of lift stops an
+  emissive panel reading as a dead region.
+- **LCARS cuts, it does not fade.** No easing, no transforms, no cross-fades,
+  no hover transitions. The originals were backlit panels; a state change was a
+  lamp switching. The theme kills transitions inside the frame explicitly,
+  because upstream ships its own and they would be inherited.
+- **The gutter is the separation.** No borders or shadows on a block.
+
 **Do not repaint the signal ramp.** `--threat-*`, `--semantic-*`, `--defcon-*`
 and `--status-*` carry meaning. Recolouring `--threat-low` into a warm LCARS
 orange makes a calm reading look like an alarm — a correctness bug in a
 situational-awareness display, not a taste difference. Repaint surfaces,
 borders and the text ramp instead; unmodified upstream panels inherit those.
 
-**Salmon `#cc6666` is alert-only.** One definition, one rule. If it becomes
-decorative the theme stops communicating.
+**Salmon `#cc6666` and critical red `#ff3300` are status only.** One rule, and
+the design system's only non-negotiable. Their sole use in the whole theme is
+the `[data-wm-alert="true"]` block; the moment either appears as ornament, an
+alert stops meaning anything. There is a test.
 
 **Chrome must be losslessly removable.** A chrome slot returns its own
 teardown, and that teardown is its exact inverse — including dropping a `class`

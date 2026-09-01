@@ -185,6 +185,14 @@ whole terminates in a curve, where it meets the header elbow above and the
 footer below. An earlier cut gave every button a 50% outer radius and read as
 a stack of lozenges rather than a console.
 
+**The theme is governed by `docs/DESIGN-SYSTEM.md`**, with
+`preview/lcars-style-guide.html` as the rendered reference. Conformance is
+asserted in the e2e suite, not left to review: the field lift, the elbow's
+2.40 : 1 ratio and its field-coloured carve, the type scale and its 13px floor,
+the rail's bottom-left code and bottom-right label, square status tags, the
+absence of transitions inside the frame, and that salmon and red appear nowhere
+in the chrome at rest.
+
 ---
 
 ### P2 — Voice, read-only
@@ -471,4 +479,6 @@ question and outside this scope.
 | `docs/UPSTREAM-DIFF.md` | Every upstream file touched, and why |
 | `deploy/kiosk/README.md` | Kiosk install and operational notes |
 | `preview/lcars-preview.html` | Standalone 1280x720 mock for the on-panel palette test |
+| `preview/lcars-style-guide.html` | The design system, rendered |
+| `docs/DESIGN-SYSTEM.md` | Geometry, colour, type, components, motion — the checklist |
 | `SCOPE.md` | This document |

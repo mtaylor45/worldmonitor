@@ -67,7 +67,11 @@ function focusPanel(key: string | undefined, doc: Document = document): boolean 
     previous.removeAttribute(FOCUS_ATTRIBUTE);
   }
   panel.setAttribute(FOCUS_ATTRIBUTE, 'true');
-  panel.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+  // Instant, not smooth. "LCARS cuts, it does not fade" — a state change was
+  // a lamp switching, and a glide is a transform over time. It is also the
+  // right call on an always-on panel, where ambient motion is a cost paid
+  // every hour of the day.
+  panel.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
 
   clearTimeout(focusTimer);
   focusTimer = setTimeout(() => {
@@ -80,7 +84,7 @@ function focusPanel(key: string | undefined, doc: Document = document): boolean 
 function focusMap(doc: Document = document): boolean {
   const map = doc.querySelector<HTMLElement>('#mapPanel, .map-panel, #map');
   if (!map) return false;
-  map.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  map.scrollIntoView({ block: 'nearest', behavior: 'instant' });
   return true;
 }
 
