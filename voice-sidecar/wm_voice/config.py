@@ -26,11 +26,44 @@ class Config:
     host: str = _env("WM_VOICE_HOST", "0.0.0.0")
     port: int = int(_env("WM_VOICE_PORT", "8765"))
 
-    # openWakeWord. 0.5 is the library default; the field value is whatever
-    # survives the 24-hour false-wake test in SCOPE.md §5 P2, which cannot be
-    # run anywhere but the room the panel lives in.
-    wake_model: str = _env("WM_WAKE_MODEL", "hey_jarvis")
-    wake_threshold: float = _float("WM_WAKE_THRESHOLD", 0.5)
+    # ---- wake word -------------------------------------------------------
+    #
+    # The wake word is "Computer". openWakeWord ships NO pretrained model for
+    # it - the bundled set is alexa / hey_jarvis / hey_mycroft / hey_rhasspy -
+    # so this must point at a custom model trained from synthetic speech. See
+    # docs/VOICE-CHARACTER.md. Empty means the wake word is disabled and only
+    # push-to-talk works; the sidecar says so at startup rather than sitting
+    # silent and looking like it is listening.
+    wake_model: str = _env("WM_WAKE_MODEL", "")
+    wake_framework: str = _env("WM_WAKE_FRAMEWORK", "onnx")
+
+    # 0.7 rather than openWakeWord's 0.5 default. "Computer" is a single common
+    # word that occurs in ordinary speech, so the false-accept rate is the
+    # design problem here, not the miss rate.
+    wake_threshold: float = _float("WM_WAKE_THRESHOLD", 0.7)
+
+    # Frames above threshold before firing. Most false accepts on a common word
+    # are single-frame spikes; requiring a run is the cheapest filter for them.
+    wake_consecutive: int = int(_env("WM_WAKE_CONSECUTIVE", "2"))
+
+    # One utterance, one wake. Without this the tail of the word fires again
+    # while the user is still drawing breath.
+    wake_refractory_s: float = _float("WM_WAKE_REFRACTORY", 2.0)
+
+    # Keep scoring while the assistant speaks. This is what makes the AEC
+    # acceptance test meaningful: say the wake word over a long response and
+    # see whether it is heard. Set to 0 on a device with no echo cancellation,
+    # where the assistant would otherwise hear itself - at the cost of not
+    # being interruptible.
+    wake_during_playback: bool = _env("WM_WAKE_DURING_PLAYBACK", "1") != "0"
+
+    # Shorter than `lead_in_s`: after a wake word the user is already talking,
+    # because the word itself was the run-up.
+    wake_lead_in_s: float = _float("WM_WAKE_LEAD_IN", 1.2)
+
+    # How much recent audio is kept for pre-roll. Detection has latency, so by
+    # the time the model fires the speaker is usually into the command.
+    preroll_s: float = _float("WM_PREROLL", 1.0)
 
     # small.en over base.en: the accuracy gain on place names is worth the
     # latency on a 4-core Skylake, and place names are most of what gets asked.

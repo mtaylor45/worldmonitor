@@ -9,10 +9,17 @@ press, which is exactly when nobody is watching a wall panel.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import unittest
 
+from wm_voice.audio import BLOCK_BYTES, AudioSource
+from wm_voice.config import Config
 from wm_voice.server import Broadcast, Sidecar
+from wm_voice.wake import WakeWatcher
+
+LOUD = (4000).to_bytes(2, "little", signed=True) * 1280
+QUIET = b"\x00\x00" * 1280
 
 
 class FakeSocket:
@@ -126,7 +133,7 @@ class TurnGuard(unittest.TestCase):
 
         sidecar = Sidecar(SlowPipeline(), events)  # type: ignore[arg-type]
         # Capture is the one part that genuinely needs a microphone.
-        sidecar._capture = lambda: _immediate(b"audio")  # type: ignore[assignment]
+        sidecar._capture = lambda **_: _immediate(b"audio")  # type: ignore[assignment]
         return sidecar, started, events
 
     def test_a_second_press_while_a_turn_runs_is_ignored(self) -> None:
@@ -164,6 +171,209 @@ class TurnGuard(unittest.TestCase):
 
         # Whatever else happened, the indicator must not be left mid-utterance.
         self.assertEqual(asyncio.run(scenario())[-1], "idle")
+
+
+class FakeAudio:
+    """A pre-filled audio source.
+
+    Only the two methods the sidecar actually uses. Deterministic where a real
+    `AudioSource` is not: capture and the wake loop would otherwise race the
+    pump for the same frames, and what is under test here is the sidecar's
+    decisions, not the fan-out (`test_audio.py` covers that).
+    """
+
+    def __init__(self, frames: list[bytes], preroll: bytes = b"") -> None:
+        self._frames = frames
+        self._preroll = preroll
+
+    @contextlib.contextmanager
+    def subscribe(self, *, maxsize: int = 256):
+        queue: asyncio.Queue[bytes] = asyncio.Queue()
+        for frame in self._frames:
+            queue.put_nowait(frame)
+        yield queue
+
+    def preroll(self) -> bytes:
+        return self._preroll
+
+
+class Capture(unittest.TestCase):
+    """Endpointing. This replaced a fixed six-second window, which spent twice
+    the entire latency budget on silence after a two-word command."""
+
+    def sidecar(self, audio: FakeAudio, **overrides: float) -> Sidecar:
+        settings: dict[str, float] = {
+            "vad_threshold": 350.0,
+            "silence_tail_s": 0.16,
+            "lead_in_s": 0.32,
+            "wake_lead_in_s": 0.16,
+            "max_utterance_s": 12.0,
+        }
+        settings.update(overrides)
+        config = Config(**settings)  # type: ignore[arg-type]
+
+        class Idle:
+            def update_snapshot(self, snapshot: dict) -> None: ...
+
+        return Sidecar(Idle(), Broadcast(), config, audio=audio)  # type: ignore[arg-type]
+
+    def test_recording_stops_when_the_speaker_does(self) -> None:
+        # Two frames of speech, then quiet: 0.16 s of tail ends it, and the
+        # frames after that are never recorded.
+        audio = FakeAudio([LOUD, LOUD] + [QUIET] * 6)
+        got = asyncio.run(self.sidecar(audio)._capture())
+        self.assertEqual(got, LOUD + LOUD + QUIET + QUIET)
+
+    def test_the_lead_in_is_longer_before_speech_than_after_it(self) -> None:
+        # A user who just pressed LISTEN is still drawing breath, so silence
+        # before speech gets a longer grace than silence after it.
+        audio = FakeAudio([QUIET] * 3 + [LOUD] * 2 + [QUIET] * 6)
+        got = asyncio.run(self.sidecar(audio)._capture())
+        self.assertEqual(len(got) // BLOCK_BYTES, 7)
+
+    def test_a_wake_turn_gets_the_shorter_lead_in(self) -> None:
+        # After the wake word the user is already talking: the word itself was
+        # the run-up, so waiting 2.5 s for speech would be latency for nothing.
+        audio = FakeAudio([QUIET] * 4)
+        got = asyncio.run(self.sidecar(audio)._capture(from_wake=True))
+        self.assertEqual(len(got) // BLOCK_BYTES, 2)
+
+    def test_a_wake_turn_is_seeded_with_pre_roll(self) -> None:
+        # Detection has latency. Without pre-roll "Computer, show the map"
+        # reaches recognition as "ow the map".
+        audio = FakeAudio([LOUD, LOUD] + [QUIET] * 4, preroll=LOUD)
+        got = asyncio.run(self.sidecar(audio)._capture(from_wake=True))
+        self.assertTrue(got.startswith(LOUD + LOUD + LOUD))
+
+    def test_push_to_talk_is_not_seeded_with_pre_roll(self) -> None:
+        # The user pressed a button; the second before it is not the command.
+        audio = FakeAudio([LOUD, LOUD] + [QUIET] * 4, preroll=LOUD * 4)
+        got = asyncio.run(self.sidecar(audio)._capture())
+        self.assertEqual(got, LOUD + LOUD + QUIET + QUIET)
+
+    def test_a_room_that_never_goes_quiet_still_ends_the_turn(self) -> None:
+        audio = FakeAudio([LOUD] * 40)
+        got = asyncio.run(self.sidecar(audio, max_utterance_s=0.4)._capture())
+        self.assertEqual(len(got) // BLOCK_BYTES, 5)
+
+    def test_a_stalled_stream_does_not_hang_the_turn(self) -> None:
+        # Returning what we have beats hanging a turn forever on a panel
+        # nobody is watching.
+        got = asyncio.run(self.sidecar(FakeAudio([]))._capture())
+        self.assertEqual(got, b"")
+
+    def test_capture_without_an_audio_source_is_an_error_not_a_hang(self) -> None:
+        class Idle:
+            def update_snapshot(self, snapshot: dict) -> None: ...
+
+        sidecar = Sidecar(Idle(), Broadcast())  # type: ignore[arg-type]
+        with self.assertRaises(RuntimeError):
+            asyncio.run(sidecar._capture())
+
+
+class Scripted:
+    def __init__(self, scores: list[float]) -> None:
+        self._scores = list(scores)
+
+    def score(self, frame: bytes) -> float:
+        return self._scores.pop(0) if self._scores else 0.0
+
+    @property
+    def available(self) -> bool:
+        return True
+
+
+class WakeLoop(unittest.TestCase):
+    def build(self, scores: list[float]) -> tuple[Sidecar, list[str]]:
+        log: list[str] = []
+
+        class Recording:
+            def update_snapshot(self, snapshot: dict) -> None: ...
+
+            async def on_wake(self, confidence: float | None = None) -> None:
+                log.append("wake %.2f" % (confidence or 0.0))
+
+            async def run(self, audio: bytes) -> object:
+                log.append("run")
+                await asyncio.sleep(0.05)
+                return object()
+
+        source = AudioSource(stream_factory=lambda: iter([QUIET] * len(scores)))
+        watcher = WakeWatcher(Scripted(scores), threshold=0.7, consecutive=1)
+        sidecar = Sidecar(Recording(), Broadcast(), audio=source, wake=watcher)  # type: ignore[arg-type]
+        sidecar._capture = lambda **_: _immediate(b"audio")  # type: ignore[assignment]
+        return sidecar, log
+
+    def test_a_detection_chirps_before_it_records(self) -> None:
+        # The chirp is the only latency the user actually perceives; everything
+        # after it can take a second.
+        async def scenario() -> list[str]:
+            sidecar, log = self.build([0.9])
+            await sidecar.start()
+            await asyncio.sleep(0.2)
+            await sidecar.stop()
+            return log
+
+        self.assertEqual(asyncio.run(scenario()), ["wake 0.90", "run"])
+
+    def test_quiet_audio_never_starts_a_turn(self) -> None:
+        async def scenario() -> list[str]:
+            sidecar, log = self.build([0.1, 0.2, 0.0])
+            await sidecar.start()
+            await asyncio.sleep(0.2)
+            await sidecar.stop()
+            return log
+
+        self.assertEqual(asyncio.run(scenario()), [])
+
+    def test_a_detection_during_a_turn_does_not_start_a_second(self) -> None:
+        # The loop deliberately keeps scoring during a turn - that is what the
+        # AEC acceptance test measures - so the turn guard is what stops two
+        # pipelines from sharing one microphone.
+        async def scenario() -> list[str]:
+            sidecar, log = self.build([0.9, 0.9, 0.9])
+            await sidecar.start()
+            await asyncio.sleep(0.2)
+            await sidecar.stop()
+            return log
+
+        # Two wakes may be announced; only one turn may run.
+        self.assertEqual([entry for entry in asyncio.run(scenario()) if entry == "run"], ["run"])
+
+    def test_an_unavailable_wake_word_leaves_push_to_talk_working(self) -> None:
+        # The expected first run: no "computer" model trained yet. The sidecar
+        # starts, says so, and the LISTEN button still works.
+        async def scenario() -> list[str]:
+            sidecar, log = self.build([])
+            sidecar._wake = WakeWatcher(_Unavailable())
+            await sidecar.start()
+            await asyncio.sleep(0.05)
+            await sidecar.start_turn()
+            await asyncio.sleep(0.1)
+            await sidecar.stop()
+            return log
+
+        self.assertEqual(asyncio.run(scenario()), ["run"])
+
+    def test_starting_with_no_audio_source_at_all_is_harmless(self) -> None:
+        class Idle:
+            def update_snapshot(self, snapshot: dict) -> None: ...
+
+        async def scenario() -> None:
+            sidecar = Sidecar(Idle(), Broadcast())  # type: ignore[arg-type]
+            await sidecar.start()
+            await sidecar.stop()
+
+        asyncio.run(scenario())
+
+
+class _Unavailable:
+    def score(self, frame: bytes) -> float:
+        return 0.0
+
+    @property
+    def available(self) -> bool:
+        return False
 
 
 async def _immediate(value: bytes) -> bytes:

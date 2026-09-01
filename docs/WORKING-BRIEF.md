@@ -45,7 +45,7 @@ Log every upstream file touched in `docs/UPSTREAM-DIFF.md`.
 | `src/themes/sounds.ts` | Slot-based UI sound playback |
 | `public/fonts/`, `public/sounds/` | Self-hosted Antonio and LCARS UI sounds |
 | `src/voice/` | Voice sidecar client — protocol, WebSocket, indicator |
-| `voice-sidecar/` | The sidecar itself: pipeline, phrasing layer, container |
+| `voice-sidecar/` | The sidecar itself: audio, wake word, pipeline, phrasing, container |
 | `src/boot.ts` | Composition root. The single upstream seam calls this |
 | `src/context/` | Panel state snapshot for the LLM (P3) |
 | `src/context/` | Panel state snapshot for the LLM (P3) |
@@ -182,6 +182,27 @@ rejects and substitutes; it is pure logic and fully tested.
 the computer is listening, and its latency is the only latency the user
 perceives — everything downstream can take a second.
 
+**One microphone, opened once.** `voice-sidecar/wm_voice/audio.py` owns the
+device and fans frames out, because the wake detector listens continuously
+while capture records on demand, and two components opening an input stream
+independently is how you get "device busy" on the one machine nobody is sitting
+at. Subscriber queues are bounded: a stalled consumer drops frames rather than
+growing a queue for months until the sidecar is killed for memory.
+
+**The wake word is "Computer", and false accepts are the design problem.**
+openWakeWord ships no pretrained model for it, so `WM_WAKE_MODEL` is empty
+until one is trained (`docs/VOICE-CHARACTER.md`) — and an unavailable detector
+says so loudly at startup rather than looking like a system that is listening.
+Because "computer" occurs in ordinary speech, the judgement in `wake.py` is
+worth more than the model: a threshold above openWakeWord's default, a
+consecutive-frame streak that rejects single-frame spikes, and a refractory
+period so one utterance cannot fire twice. Tune those three with the 24-hour
+test and nothing else.
+
+**Wake turns are seeded with pre-roll.** Detection only fires once the whole
+word has been heard, by which point the speaker is into the command; without
+the ring buffer, "Computer, show the map" reaches recognition as "ow the map".
+
 **`voice.ptt` reports failure when no sidecar answers**, so the rail plays the
 refusal tone. On a wall panel a silent no-op is indistinguishable from a broken
 button.
@@ -270,6 +291,9 @@ ladder, and both palettes selectable.
 
 Outstanding, and deliberately so:
 
+- **A trained "Computer" wake model.** The detector, the shared audio source
+  and the pre-roll are built and tested; openWakeWord ships no model for this
+  word, so the remaining step is a training run, not code.
 - **Acceptance criteria that need hardware**: sub-3s latency on CPU
   (`voice-sidecar/bench_latency.py` measures it), the wake word surviving TTS
   playback (AEC), and no false wake in 24 hours.

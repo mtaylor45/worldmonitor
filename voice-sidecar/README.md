@@ -43,8 +43,14 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | Variable | Default | Notes |
 |---|---|---|
 | `WM_VOICE_PORT` | `8765` | The dashboard connects to `ws://<host>:8765/voice` |
-| `WM_WAKE_MODEL` | `hey_jarvis` | Replace with a custom "Computer" model |
-| `WM_WAKE_THRESHOLD` | `0.5` | Tune against the 24-hour false-wake test |
+| `WM_WAKE_MODEL` | *(empty)* | Path to a trained "Computer" model. Empty = push-to-talk only |
+| `WM_WAKE_FRAMEWORK` | `onnx` | `tflite` if you exported that instead |
+| `WM_WAKE_THRESHOLD` | `0.7` | Tune against the 24-hour false-wake test |
+| `WM_WAKE_CONSECUTIVE` | `2` | Frames above threshold before firing |
+| `WM_WAKE_REFRACTORY` | `2.0` | One utterance, one wake |
+| `WM_WAKE_DURING_PLAYBACK` | `1` | `0` only on hardware with no echo cancellation |
+| `WM_WAKE_LEAD_IN` | `1.2` | Grace before speech, after a wake word |
+| `WM_PREROLL` | `1.0` | Recent audio replayed into a wake turn |
 | `WM_STT_MODEL` | `small.en` | `small.en` over `base.en`: the accuracy gain on place names is worth the latency, and place names are most of what gets asked |
 | `WM_STT_COMPUTE` | `int8` | |
 | `WM_LLM_URL` | `http://127.0.0.1:8080/v1` | llama.cpp `llama-server`. Ollama works too: point at `:11434/v1` |
@@ -66,6 +72,8 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 
 | File | Contents |
 |---|---|
+| `audio.py` | One microphone, fanned out. Pre-roll ring buffer |
+| `wake.py` | "Computer": threshold, streak, refractory, playback gating |
 | `phrasing.py` | The register: validator, templates, numerals. **Layer 1** |
 | `commands.py` | P3's boundary: the contract, the prompt, and the validator |
 | `router.py` | Intent tiers. Tier 0 answers without a model at all |
@@ -73,7 +81,7 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | `pipeline.py` | Turn orchestration and the latency budget |
 | `protocol.py` | Wire protocol, mirrored in `src/voice/protocol.ts` |
 | `server.py` | WebSocket fan-out, push-to-talk, turn guard |
-| `adapters.py` | openWakeWord / faster-whisper / Ollama / Kokoro / PipeWire |
+| `adapters.py` | faster-whisper / llama.cpp / Kokoro / PipeWire |
 | `signal_chain.py` | Post-TTS ffmpeg chain. **Layer 4** |
 | `config.py` | Environment configuration |
 
@@ -150,6 +158,59 @@ else. Readings come from tools. Pushing every panel's numbers into every turn
 costs prompt-processing time for data the model usually does not need, and
 grows without bound as panels are added.
 
+## The wake word is "Computer", and that is the hard case
+
+Two facts drive the whole design of `wake.py`.
+
+**openWakeWord ships no pretrained "computer" model.** Its bundled set is
+`alexa`, `hey_jarvis`, `hey_mycroft` and `hey_rhasspy`. "Computer" has to be
+trained, which openWakeWord's own pipeline does from synthetic speech with no
+recording required — the procedure is in `docs/VOICE-CHARACTER.md`. Until that
+model exists on disk, `WM_WAKE_MODEL` is empty, the detector reports itself
+unavailable and **says so loudly at startup**. Push-to-talk is unaffected. A
+wake word that silently never fires is indistinguishable from a broken panel.
+
+**"Computer" is a single common word, so false accepts are the design problem,
+not misses.** Unlike "hey jarvis" it occurs in ordinary speech, and on a panel
+that listens all day the failure that matters is the one where the news says
+"computer" and the dashboard starts a turn. Three mitigations, all tunable:
+
+| | Default | What it removes |
+|---|---|---|
+| `WM_WAKE_THRESHOLD` | `0.7` | Low-confidence matches (openWakeWord's own default is 0.5) |
+| `WM_WAKE_CONSECUTIVE` | `2` | Single-frame spikes, which is what most false accepts look like |
+| `WM_WAKE_REFRACTORY` | `2.0` | The tail of one word firing a second turn |
+
+The 24-hour false-wake acceptance test exists to tune exactly these three, and
+it can only be run in the room the panel lives in.
+
+## One microphone, two consumers
+
+The detector must listen continuously; capture must record on demand. Both want
+the same device, and two components independently opening an input stream is
+the classic way to get an unhelpful "device busy" on the one machine nobody is
+sitting in front of. So `audio.py` opens it once and fans frames out. Consumers
+subscribe and unsubscribe; the device is untouched by either.
+
+Subscriber queues are **bounded**. A consumer that stalls drops frames rather
+than growing a queue until the sidecar is killed for memory — on a panel that
+runs for months, an unbounded queue behind a wedged consumer is a leak with a
+very long fuse. The drop is confined to the stalled subscriber, so one slow
+consumer cannot stall the wake detector.
+
+The other thing `audio.py` provides is **pre-roll**. Detection has latency: the
+model only fires once it has heard the whole word, by which point the speaker
+is usually already into the command. A one-second ring buffer of recent audio
+is prepended to a wake turn, so "Computer, show the map" does not arrive at
+recognition as "ow the map".
+
+**The detector keeps scoring while the assistant speaks.** That is what makes
+the AEC acceptance test meaningful — say the wake word over a long response and
+see whether it is heard. `WM_WAKE_DURING_PLAYBACK=0` gates it for hardware that
+ducks rather than cancels, at the cost of not being interruptible, which is why
+it is not the default. A detection during a turn is announced but starts
+nothing: the turn guard refuses re-entry.
+
 ## Capture: endpointing, not a fixed window
 
 Recording stops when the speaker does. This replaced a fixed six-second window,
@@ -210,8 +271,10 @@ test coverage substitutes:
   response and say the wake word over the top. Responds = real full-duplex AEC.
   Ignores you until playback ends = ducking, and the device is the wrong
   category (`SCOPE.md` §8).
-- **No false wake in 24 hours** of normal room noise. `WM_WAKE_THRESHOLD`
-  exists to be tuned by this test and nothing else.
+- **No false wake in 24 hours** of normal room noise. `WM_WAKE_THRESHOLD`,
+  `WM_WAKE_CONSECUTIVE` and `WM_WAKE_REFRACTORY` exist to be tuned by this test
+  and nothing else. It also needs a trained "Computer" model, so it is gated on
+  the training run rather than on the code.
 
 ## Build order
 
@@ -220,6 +283,7 @@ From `docs/VOICE-CHARACTER.md`, and worth following:
 1. **Phrasing rules and validator** — done. Test with any voice at all; if the
    words are right it already reads as the computer.
 2. **Wake chirp** — done. Fires on detection, before recognition completes.
+   The detector itself is done too; the *model* it needs is a training run.
 3. **Voice audition on hardware** — pending a panel and a speaker.
 4. **Prosody tuning** — pending.
 5. **Signal chain** — written, unverified by ear.

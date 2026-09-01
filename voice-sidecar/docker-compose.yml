@@ -22,6 +22,16 @@ services:
       WM_API_URL: http://127.0.0.1:3000
       WM_STT_MODEL: small.en
       WM_TTS_VOICE: af_sarah
+      # Wake word: "Computer". openWakeWord ships no pretrained model for it,
+      # so this points into the mounted model volume and is empty until one is
+      # trained (docs/VOICE-CHARACTER.md). Empty means push-to-talk only, said
+      # loudly at startup rather than a system that looks like it is listening.
+      WM_WAKE_MODEL: ""
+      # 0.7, not openWakeWord's 0.5: "Computer" occurs in ordinary speech, so
+      # false accepts are the design problem here. Tune against the 24-hour
+      # test, in the room the panel lives in.
+      WM_WAKE_THRESHOLD: "0.7"
+      WM_WAKE_CONSECUTIVE: "2"
     restart: unless-stopped
 
   # llama.cpp rather than Ollama: native Qwen tool-call parsing, an explicit

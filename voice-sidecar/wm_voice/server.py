@@ -13,8 +13,10 @@ import contextlib
 import logging
 
 from . import protocol
+from .audio import BLOCK_SAMPLES, SAMPLE_RATE, AudioSource, rms
 from .config import CONFIG, Config
 from .pipeline import Pipeline
+from .wake import WakeWatcher
 
 log = logging.getLogger("wm_voice")
 
@@ -67,12 +69,71 @@ class Broadcast:
 class Sidecar:
     """Owns the pipeline, the microphone loop, and the socket server."""
 
-    def __init__(self, pipeline: Pipeline, events: Broadcast, config: Config = CONFIG) -> None:
+    def __init__(
+        self,
+        pipeline: Pipeline,
+        events: Broadcast,
+        config: Config = CONFIG,
+        *,
+        audio: AudioSource | None = None,
+        wake: WakeWatcher | None = None,
+    ) -> None:
         self._config = config
         self._pipeline = pipeline
         self._events = events
-        self._config = config
         self._turn: asyncio.Task[object] | None = None
+        self._audio = audio
+        self._wake = wake
+        self._wake_task: asyncio.Task[None] | None = None
+        #: True while a turn is in flight, which is the window that contains
+        #: playback. The wake detector needs to know, because hearing itself is
+        #: the failure mode that decides whether the audio device is usable at
+        #: all. Deliberately coarser than "audio is leaving the speaker right
+        #: now": that would need the pipeline to report each stage back here,
+        #: and the extra precision buys nothing - the only consumer is a gate
+        #: that is off unless the hardware lacks echo cancellation, and on such
+        #: hardware there is no reason to wake mid-turn either.
+        self._speaking = False
+
+    async def start(self) -> None:
+        """Opens the microphone and arms the wake word, if one is configured."""
+        if self._audio is None:
+            return
+        await self._audio.start()
+        if self._wake is not None and self._wake.available:
+            self._wake_task = asyncio.create_task(self._listen_for_wake())
+
+    async def stop(self) -> None:
+        if self._wake_task is not None:
+            self._wake_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._wake_task
+            self._wake_task = None
+        if self._audio is not None:
+            await self._audio.stop()
+
+    async def _listen_for_wake(self) -> None:
+        """Scores every frame, forever, and starts a turn when it fires.
+
+        Runs for the life of the sidecar. Deliberately does NOT stop while a
+        turn is in flight: the detector keeps scoring so the wake word can be
+        heard over the assistant's own playback, which is the AEC acceptance
+        test in SCOPE.md §5. `start_turn` refuses re-entry, so a detection
+        during a turn costs a score and nothing else.
+        """
+        assert self._audio is not None and self._wake is not None
+        with self._audio.subscribe() as frames:
+            while True:
+                frame = await frames.get()
+                detection = self._wake.feed(frame, speaking=self._speaking)
+                if detection is None:
+                    continue
+                log.info("wake word (%.2f)", detection.confidence)
+                # Announced before any recognition has happened, so the chirp
+                # sounds immediately. That acknowledgement is the only latency
+                # the user actually perceives.
+                await self._pipeline.on_wake(detection.confidence)
+                await self.start_turn(from_wake=True)
 
     async def handle(self, socket: object) -> None:
         """One dashboard connection."""
@@ -105,7 +166,7 @@ class Sidecar:
                 # whichever published most recently is as good as any.
                 self._pipeline.update_snapshot(snapshot)
 
-    async def start_turn(self) -> None:
+    async def start_turn(self, *, from_wake: bool = False) -> None:
         """Records, then runs one turn.
 
         Refuses to start a second turn while one is running: on a wall panel a
@@ -114,12 +175,23 @@ class Sidecar:
         """
         if self._turn and not self._turn.done():
             return
-        self._turn = asyncio.create_task(self._run())
+        if self._wake is not None:
+            # Clear the streak so audio the user speaks as a command cannot
+            # accumulate toward waking again mid-utterance.
+            self._wake.reset()
+        self._turn = asyncio.create_task(self._run(from_wake=from_wake))
 
-    async def _run(self) -> None:
-        await self._events.state("listening")
-        audio = await self._capture()
-        await self._pipeline.run(audio)
+    async def _run(self, *, from_wake: bool = False) -> None:
+        if not from_wake:
+            # A wake turn is already in `listening`; on_wake set it before the
+            # chirp. Re-sending would blink the indicator for no reason.
+            await self._events.state("listening")
+        audio = await self._capture(from_wake=from_wake)
+        try:
+            self._speaking = True
+            await self._pipeline.run(audio)
+        finally:
+            self._speaking = False
 
     async def cancel(self) -> None:
         if self._turn and not self._turn.done():
@@ -128,67 +200,79 @@ class Sidecar:
                 await self._turn
         await self._events.state("idle")
 
-    async def _capture(self) -> bytes:
-        """Records until the speaker stops, using voice-activity endpointing.
+    async def _capture(self, *, from_wake: bool = False) -> bytes:
+        """Records until the speaker stops, from the shared audio source.
 
-        This replaces a fixed-duration recording, which was the single largest
-        latency defect in the pipeline: a six-second window meant *every* turn
-        waited six seconds before recognition could even begin, spending twice
-        the entire budget on silence after a two-word command.
+        Endpointing rather than a fixed window: a six-second recording spent
+        twice the entire latency budget on silence after a two-word command.
 
-        Endpointing stops on `SILENCE_TAIL_S` of quiet, so "show the map" takes
-        about a second of wall clock rather than six. `MAX_UTTERANCE_S` is a
-        backstop for a room that never goes quiet, not a target.
-
-        Deferred import and a hard failure mode: with no microphone this raises
-        and the turn reports an error, rather than silently returning empty
-        audio that looks like the user said nothing.
+        When the turn started from the wake word, the buffer is seeded with
+        pre-roll. Detection has latency - the model only fires once it has
+        heard the whole word - so by then the speaker is usually already into
+        the command, and without pre-roll "Computer, show the map" reaches
+        recognition as "ow the map".
         """
-        import numpy  # noqa: PLC0415
-        import sounddevice  # noqa: PLC0415
+        if self._audio is None:
+            raise RuntimeError("no audio source configured")
 
         config = self._config
-        rate = 16_000
-        block = int(rate * 0.03)  # 30 ms, the frame size Silero and WebRTC use
+        seconds_per_frame = BLOCK_SAMPLES / SAMPLE_RATE
         collected: list[bytes] = []
 
-        def _record() -> bytes:
-            silence = 0.0
-            speech_seen = False
-            elapsed = 0.0
-            with sounddevice.InputStream(
-                samplerate=rate, channels=1, dtype="int16", blocksize=block
-            ) as stream:
-                while elapsed < config.max_utterance_s:
-                    frame, _ = stream.read(block)
-                    collected.append(bytes(numpy.asarray(frame).tobytes()))
-                    elapsed += 0.03
+        if from_wake:
+            preroll = self._audio.preroll()
+            if preroll:
+                collected.append(preroll)
 
-                    # RMS gate rather than a neural VAD: it costs nothing, and
-                    # the microphone in this deployment is a near-field
-                    # conferencing unit, not a far-field array. Swap in Silero
-                    # here if the room proves noisier than the gate can handle.
-                    level = float(numpy.abs(numpy.asarray(frame, dtype="float32")).mean())
-                    if level > config.vad_threshold:
-                        speech_seen = True
-                        silence = 0.0
-                    else:
-                        silence += 0.03
+        silence = 0.0
+        speech_seen = False
+        elapsed = 0.0
 
-                    # Two different silences: before speech we wait longer,
-                    # because a user who pressed LISTEN is still drawing breath.
-                    limit = config.silence_tail_s if speech_seen else config.lead_in_s
-                    if silence >= limit:
-                        break
-            return b"".join(collected)
+        with self._audio.subscribe() as frames:
+            while elapsed < config.max_utterance_s:
+                try:
+                    frame = await asyncio.wait_for(frames.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    # The stream stalled. Returning what we have beats hanging
+                    # a turn forever on a panel nobody is watching.
+                    break
 
-        return await asyncio.to_thread(_record)
+                collected.append(frame)
+                elapsed += seconds_per_frame
+
+                # RMS gate rather than a neural VAD: it costs nothing, and the
+                # microphone here is a near-field conferencing unit, not a
+                # far-field array. Swap in Silero if the room proves noisier.
+                if rms(frame) > config.vad_threshold:
+                    speech_seen = True
+                    silence = 0.0
+                else:
+                    silence += seconds_per_frame
+
+                # Two different silences: before speech we wait longer, because
+                # a user who just pressed LISTEN is still drawing breath. After
+                # a wake word they are already talking, so the lead-in is
+                # shorter - the word itself was the run-up.
+                if speech_seen:
+                    limit = config.silence_tail_s
+                elif from_wake:
+                    limit = config.wake_lead_in_s
+                else:
+                    limit = config.lead_in_s
+                if silence >= limit:
+                    break
+
+        return b"".join(collected)
 
 
 async def serve(sidecar: Sidecar, config: Config = CONFIG) -> None:
     """Runs the WebSocket server until cancelled."""
     import websockets  # noqa: PLC0415 - deferred so tests import this module
 
-    async with websockets.serve(sidecar.handle, config.host, config.port):
-        log.info("voice sidecar listening on %s", config.endpoint)
-        await asyncio.Future()
+    await sidecar.start()
+    try:
+        async with websockets.serve(sidecar.handle, config.host, config.port):
+            log.info("voice sidecar listening on %s", config.endpoint)
+            await asyncio.Future()
+    finally:
+        await sidecar.stop()

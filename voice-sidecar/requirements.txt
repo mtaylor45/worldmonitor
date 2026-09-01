@@ -3,6 +3,9 @@
 openwakeword==0.6.0
 faster-whisper==1.1.1
 kokoro==0.9.4
+# Not imported by this package: pinned because Kokoro reads and writes audio
+# through it, and an unpinned transitive dependency is exactly the 3am
+# rebuild this file exists to prevent.
 soundfile==0.13.1
 sounddevice==0.5.1
 numpy==2.2.3

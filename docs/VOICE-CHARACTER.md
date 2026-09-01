@@ -104,6 +104,88 @@ If present, gate it: `ffmpeg -af "agate=threshold=0.02:ratio=4:attack=1:release=
 
 ---
 
+## The wake word — "Computer"
+
+The chosen wake word is **"Computer"**, and it is the hardest one to do well.
+Two facts decide everything about how it is implemented.
+
+### There is no pretrained model for it
+
+openWakeWord ships `alexa`, `hey_jarvis`, `hey_mycroft` and `hey_rhasspy`.
+Nothing for "computer". It has to be trained, and until it is,
+`WM_WAKE_MODEL` stays empty: the sidecar reports the detector unavailable at
+startup and push-to-talk carries the whole feature. That is deliberate. A wake
+word that silently never fires is indistinguishable from a broken panel, and a
+wall display is exactly where nobody would notice.
+
+Training needs no recordings of your own voice. openWakeWord's pipeline
+generates synthetic speech, mixes it with room noise, and trains against it:
+
+```bash
+pip install openwakeword[training]
+python -m openwakeword.train \
+    --target_word "computer" \
+    --model_name computer \
+    --n_samples 30000 \
+    --output_dir ./wake-models
+```
+
+Export ONNX (the default; `WM_WAKE_FRAMEWORK=tflite` if you export that
+instead), drop the file into the sidecar's model volume, and point
+`WM_WAKE_MODEL` at it. Nothing else changes — `build_scorer` loads it or logs
+why it could not, and never raises either way.
+
+Two things worth doing at training time, because they cost nothing then and a
+retraining run later:
+
+- **Include the negative set.** "Computer" appears in ordinary speech, so
+  training against clips that contain it in running sentences is what teaches
+  the model the difference between an address and a mention.
+- **Record fifty positives in the actual room** and hold them back as a test
+  set. Synthetic speech trains well and evaluates badly; the room's
+  reverberation is the thing the panel actually hears.
+
+### It is a single common word, so false accepts are the problem
+
+Not misses. "Hey Jarvis" essentially never occurs by accident; "computer" turns
+up in conversation, and on a display that listens all day the failure that
+matters is the news saying the word and the dashboard starting a turn. Three
+filters, in `voice-sidecar/wm_voice/wake.py`, all tunable:
+
+| Control | Default | What it removes |
+|---|---|---|
+| `WM_WAKE_THRESHOLD` | `0.7` | Low-confidence matches. openWakeWord's own default is 0.5 |
+| `WM_WAKE_CONSECUTIVE` | `2` | Single-frame spikes — what most false accepts look like |
+| `WM_WAKE_REFRACTORY` | `2.0` | The tail of one word firing a second turn |
+
+**Tune them with the 24-hour test and nothing else.** Raising the threshold
+because a demo misfired once is how a wake word ends up at 0.95 and unusable.
+Leave it running for a day in the room, count the wakes nobody asked for, and
+move one number.
+
+### Pre-roll, because detection is not instant
+
+The model only fires once it has heard the whole word, by which point the
+speaker is usually into the command. `WM_PREROLL` (1 s) keeps a ring buffer of
+recent audio that is prepended to a wake turn, so "Computer, show the map"
+reaches recognition whole rather than as "ow the map".
+
+Its companion is `WM_WAKE_LEAD_IN` (1.2 s), shorter than the 2.5 s push-to-talk
+lead-in: after a wake word the user is already talking, because the word itself
+was the run-up. Waiting the full grace period would be latency spent on nothing.
+
+### The detector keeps listening while the assistant speaks
+
+That is what makes the AEC acceptance test below mean something. On hardware
+with real full-duplex echo cancellation you can interrupt a long response;
+`WM_WAKE_DURING_PLAYBACK=0` gates it for hardware that ducks instead, at the
+cost of interruptibility, which is why it is not the default. A detection
+during a turn is announced but starts nothing — the turn guard refuses
+re-entry, because two pipelines sharing one microphone produce two wrong
+answers.
+
+---
+
 ## Layer 3 — The chirp
 
 Beep first, then speak. This single pattern is more identifiably Trek than any
@@ -234,7 +316,7 @@ the register.
 
 1. Phrasing rules + validator. Test with any voice at all — if the *words* are
    right, it already reads as the computer.
-2. Wake chirp.
+2. Wake chirp. The detector is built; the "Computer" model is a training run.
 3. Voice audition on hardware.
 4. Prosody tuning.
 5. Signal chain.
@@ -251,4 +333,6 @@ Steps 1 and 2 get most of the effect and can ship in P2. Steps 3–5 are polish.
   play a long TTS response and say the wake word over the top. Responds = real
   full-duplex AEC. Ignores you until playback ends = ducking, and the device is
   the wrong category (SCOPE.md §8).
-- No false wake in 24 h of normal room noise.
+- No false wake in 24 h of normal room noise. Gated on the training run above,
+  not on the code: `WM_WAKE_THRESHOLD`, `WM_WAKE_CONSECUTIVE` and
+  `WM_WAKE_REFRACTORY` are the only three knobs this test is allowed to move.
