@@ -78,12 +78,15 @@ class NullAudio:
 
 
 async def main(runs: int) -> int:
-    from wm_voice.adapters import KokoroTTS, OllamaLLM
+    from wm_voice.adapters import OllamaLLM, build_tts
 
     print(f"model={CONFIG.ollama_model} tts={CONFIG.tts_engine}/{CONFIG.tts_voice}")
     print(f"budget={LATENCY_BUDGET_S}s (end-of-speech to first audio)\n")
 
-    llm, tts = OllamaLLM(CONFIG), KokoroTTS(CONFIG)
+    # Built from WM_TTS_ENGINE rather than hardcoded: this benchmark exists
+    # to decide whether Kokoro's CPU latency is acceptable or Piper is
+    # needed, and one that always measured Kokoro could not answer that.
+    llm, tts = OllamaLLM(CONFIG), build_tts(CONFIG)
     totals: list[float] = []
     stages: dict[str, list[float]] = {}
     over = 0

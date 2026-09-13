@@ -19,7 +19,7 @@ import logging
 from typing import Awaitable, Callable
 
 from . import protocol
-from .alerts import AlertWatcher, readings_from_risk_scores, speech
+from .alerts import Alert, AlertWatcher, readings_from_risk_scores, speech
 from .audio import BLOCK_SAMPLES, SAMPLE_RATE, AudioSource, rms
 from .config import CONFIG, Config
 from .pipeline import Pipeline
@@ -30,6 +30,12 @@ from .wake import WakeWatcher
 #: tracked region plus the `degraded` and `stale` flags, so the watcher needs
 #: exactly one request per poll and can tell a real reading from a cached one.
 RISK_SCORES_PATH = "/api/intelligence/v1/get-risk-scores"
+
+#: Cap on alerts held while a turn runs. A turn is bounded by its own
+#: max-utterance backstop, so in practice at most one poll lands inside one;
+#: the cap is insurance against a playback that wedges on a panel running
+#: for months, not an expected path.
+MAX_HELD_ALERTS = 16
 
 log = logging.getLogger("wm_voice")
 
@@ -116,6 +122,15 @@ class Sidecar:
         #: only: re-asserting `active` every five minutes would replay the
         #: alert tone on a panel that has been flashing red for an hour.
         self._alert_active = False
+        #: What that frame said, so a dashboard connecting later can be told
+        #: the same thing. The kiosk reloads itself, and a panel that comes up
+        #: during an alert would otherwise render calm until the alert cleared.
+        self._alert_region: str | None = None
+        self._alert_score: float | None = None
+        #: Alerts raised while a turn was in flight, waiting for the speaker.
+        #: Raising is edge-triggered, so an alert dropped here is never raised
+        #: again - it has to be held rather than discarded.
+        self._held_alerts: list[Alert] = []
         #: True while a turn is in flight, which is the window that contains
         #: playback. The wake detector needs to know, because hearing itself is
         #: the failure mode that decides whether the audio device is usable at
@@ -214,27 +229,45 @@ class Sidecar:
         # Published on a state CHANGE, so the chirp and the tone fire once per
         # crossing rather than once per poll.
         if self._alerts.active != self._alert_active:
-            self._alert_active = self._alerts.active
             top = max(raised, key=lambda a: a.score) if raised else None
+            self._alert_active = self._alerts.active
+            self._alert_region = top.region if top else None
+            self._alert_score = top.score if top else None
             await self._events.alert(
-                self._alert_active,
-                top.region if top else None,
-                top.score if top else None,
+                self._alert_active, self._alert_region, self._alert_score
             )
 
-        announce = self._alerts.to_announce(raised)
-        if announce is None:
+        candidates = self._held_alerts + raised
+        if not candidates:
             return
 
-        # Never over the user. A turn in flight owns the speaker, and cutting
-        # across a spoken answer to announce something the display is already
-        # showing would be the assistant talking over the person who asked it a
-        # question.
+        # Checked BEFORE `to_announce`, which is the whole point: that call
+        # spends the minimum-interval budget, so asking it about an alert that
+        # cannot be spoken yet would buy fifteen minutes of silence with an
+        # utterance nobody heard. A turn in flight owns the speaker - cutting
+        # across a spoken answer to announce what the display is already
+        # showing would be the assistant talking over the person who just
+        # asked it a question.
         if self._turn and not self._turn.done():
-            log.info("alert not spoken: a turn is in flight (%s)", announce.region)
+            # Held, not dropped. Raising is edge-triggered, so a region already
+            # firing raises nothing on the next poll: an alert discarded here
+            # is never spoken at all.
+            self._held_alerts = candidates[-MAX_HELD_ALERTS:]
+            log.info(
+                "alert held, a turn is in flight: %s",
+                ", ".join(a.region for a in candidates),
+            )
             return
 
-        await self._pipeline.announce(speech(announce))
+        # Cleared whatever `to_announce` decides. Quiet hours and the minimum
+        # interval are deliberate silences rather than deferrals - holding
+        # through them would deliver a queue of alerts at 07:00, which is the
+        # failure the interval exists to prevent.
+        self._held_alerts = []
+
+        announce = self._alerts.to_announce(candidates)
+        if announce is not None:
+            await self._pipeline.announce(speech(announce))
 
     async def handle(self, socket: object) -> None:
         """One dashboard connection."""
@@ -243,6 +276,15 @@ class Sidecar:
             # A newly connected panel needs to know the current state; without
             # this its indicator reads STANDING BY until the next utterance.
             await socket.send(protocol.state("idle"))  # type: ignore[attr-defined]
+            if self._alert_active:
+                # And the alert state, for the same reason and a worse
+                # symptom: alert frames are edge-triggered, so a panel that
+                # reloaded during an alert would render calm until the alert
+                # cleared and raised again - a red-alert display showing
+                # nothing, on the machine nobody is watching.
+                await socket.send(  # type: ignore[attr-defined]
+                    protocol.alert(True, self._alert_region, self._alert_score)
+                )
             async for raw in socket:  # type: ignore[attr-defined]
                 message = protocol.parse_client_message(raw)
                 if message is None:

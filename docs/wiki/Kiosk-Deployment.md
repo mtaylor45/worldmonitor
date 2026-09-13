@@ -50,13 +50,25 @@ page:
 
 ---
 
-## The sidecar container
+## Bring-up
 
 ```bash
-docker compose -f voice-sidecar/docker-compose.yml up -d
+make -C deploy models        # fetch + verify weights (sha256 from HF's own API)
+make -C deploy up            # sidecar + model server
+make -C deploy doctor        # preflight
+sudo make -C deploy kiosk    # user, packages, unit, enable
 ```
 
-Two things in that file are load-bearing:
+`deploy/Makefile` is fork-owned and deliberately **not** the repository root
+`Makefile`, which is upstream's protobuf toolchain — putting our deployment
+story there would spend an upstream seam on it.
+
+`models` verifies every file on every run, and refuses a file whose hash does
+not match rather than silently re-fetching: that is either a corrupt download
+or a changed upstream artefact, and both are things the operator should see.
+Weights land in `deploy/models/`, bind-mounted read-only into both containers.
+
+Two things in the compose file are load-bearing:
 
 - `--device /dev/snd` — the container needs real audio devices.
 - Host networking — the dashboard, the model server and the sidecar are all on

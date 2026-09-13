@@ -375,6 +375,9 @@ worldmonitor/
 │   └── sounds/              LCARS UI sounds + licence
 │
 ├── deploy/
+│   ├── Makefile             bring-up: models, up, doctor, kiosk
+│   ├── models.conf          weights + verified sha256
+│   ├── fetch-models.sh      fetch and verify, idempotent
 │   └── kiosk/               cage + Chromium + systemd unit
 │
 ├── preview/
@@ -392,6 +395,7 @@ worldmonitor/
 │   │   ├── commands.py      the P3 boundary: contract and validator
 │   │   ├── router.py        intent tiers; tier 0 answers with no model
 │   │   ├── tools.py         UI tools dispatched, data tools fetched
+│   │   ├── doctor.py        preflight: what is broken, and the remedy
 │   │   ├── server.py        WebSocket fan-out, wake loop, alert poller
 │   │   ├── adapters.py      STT / LLM / TTS / audio out
 │   │   └── signal_chain.py  post-TTS ffmpeg chain
@@ -415,6 +419,16 @@ Every directory above is populated. What remains is hardware verification.
 ---
 
 ## Kiosk
+
+```bash
+make -C deploy models && make -C deploy up && make -C deploy doctor
+sudo make -C deploy kiosk
+```
+
+`doctor` is the one to run before trusting a panel: every dependency the
+sidecar has fails silently, so it checks each and names a remedy rather than a
+verdict.
+
 
 `deploy/kiosk/` holds a `cage` + Chromium profile for Ubuntu Server: a systemd
 unit, a launch script, and an env template. Install steps and operational notes
@@ -527,7 +541,7 @@ npx playwright test e2e/theme-engine-p0.spec.ts
 cd voice-sidecar && python3 -m unittest discover -s tests -t .
 ```
 
-Current counts: **207** sidecar tests, **815** DOM tests across 95 files, **36**
+Current counts: **230** sidecar tests, **815** DOM tests across 95 files, **36**
 end-to-end tests.
 
 Run all three after every upstream merge. The token test catches upstream

@@ -22,11 +22,22 @@ and renders it — nothing more.
 ## Run it
 
 ```bash
-docker compose -f voice-sidecar/docker-compose.yml up -d
+make -C deploy models    # fetch and verify the weights
+make -C deploy up        # sidecar + model server
+make -C deploy doctor    # preflight — what is wrong, and how to fix it
 ```
 
 `--device /dev/snd` and host networking are both load-bearing: the container
-needs real audio devices, and Ollama and the dashboard are on localhost.
+needs real audio devices, and the model server and the dashboard are on
+localhost. Weights are bind-mounted read-only from `deploy/models/`, which is
+where `make models` puts them after checking every file against a sha256 read
+from Hugging Face's own API.
+
+**Run `doctor` before trusting the panel.** Every dependency this sidecar has
+fails silently — no microphone, no wake model, a model server that is not up,
+an upstream API whose schema moved — and each produces a display that looks
+alive and does nothing. `doctor` names the problem *and the remedy*, and exits
+non-zero so it can gate a deploy.
 
 Locally, without containers:
 
@@ -58,7 +69,6 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | `WM_LLM_THINKING` | `0` | Qwen3 non-thinking mode. The biggest per-turn saving available |
 | `WM_LLM_CONTEXT` | `8192` | Every unused token of context is prompt-processing time |
 | `WM_LLM_THREADS` | `8` | Benchmark 6 against 8 — hyperthreads can cost more than they return |
-| `WM_FAST_MODEL` | *(empty)* | Optional tier-1 model. Off by default; measure first |
 | `WM_API_URL` | `http://127.0.0.1:3000` | Where the data tools fetch from |
 | `WM_VAD_THRESHOLD` | `350` | RMS gate for endpointing |
 | `WM_SILENCE_TAIL` | `0.8` | Quiet after speech that ends the utterance |
@@ -70,8 +80,9 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | `WM_ALERT_MIN_INTERVAL` | `900` | Floor between *spoken* alerts |
 | `WM_ALERT_QUIET_HOURS` | `22:00-07:00` | Silences the voice, never the display. Empty disables |
 | `WM_ALERT_SPEAK` | `1` | `0` for a display-only alert state |
-| `WM_TTS_ENGINE` | `kokoro` | Piper if CPU latency disappoints |
-| `WM_TTS_VOICE` | `af_sarah` | Audition on the panel, not in headphones |
+| `WM_TTS_ENGINE` | `kokoro` | `kokoro` or `piper`. An unknown name refuses to start |
+| `WM_PIPER_BINARY` | `piper` | Only read when the engine is `piper` |
+| `WM_TTS_VOICE` | `af_sarah` | Kokoro voice name, or a path to a Piper `.onnx` |
 | `WM_SIGNAL_CHAIN` | `1` | `0` to hear a raw voice against a processed one |
 
 ## Layout
@@ -90,6 +101,7 @@ Everything is environment variables; defaults target the NUC in `SCOPE.md` §2.
 | `server.py` | WebSocket fan-out, push-to-talk, turn guard |
 | `adapters.py` | faster-whisper / llama.cpp / Kokoro / PipeWire |
 | `signal_chain.py` | Post-TTS ffmpeg chain. **Layer 4** |
+| `doctor.py` | Preflight: every dependency that otherwise fails silently |
 | `config.py` | Environment configuration |
 
 ## The model, and the latency arithmetic
@@ -113,7 +125,6 @@ So the budget is split rather than pretended at:
 | Tier | Handles | Model | Target |
 |---|---|---|---|
 | 0 · direct | "show the map", "focus markets", "change the theme" | **none** | **< 1 s** |
-| 1 · fast | short conversational replies | 1.7B *(optional)* | < 3 s |
 | 2 · full | questions, briefings, multi-step | 8B + tools | **8–12 s** |
 
 Tier 0 is not a fallback for a broken model — it is the fast path for the
@@ -121,9 +132,12 @@ commands people actually repeat, and it is where the responsiveness comes from.
 A wall panel gets "show the map" far more often than it gets a geopolitical
 question, and none of those should wake an 8B.
 
-Tier 1 is configured but **off by default**. A second resident model costs RAM
-and another thing to keep loaded, and it only pays off once tier 0's coverage
-stops growing. `WM_FAST_MODEL` enables it; measure before you do.
+A middle tier — a small model for short conversational replies — was specified
+and has been **removed**. It was never wired into the pipeline, so the setting
+that enabled it loaded a second resident model and changed nothing; a
+documented knob that does nothing is worse than an absent one. It belongs back
+when tier 0's coverage stops growing *and* a measurement says a 1.7B beats
+falling through to the 8B, not before.
 
 Tier 2 is where a briefing lives, and 8–12 s is acceptable there because the
 user asked for a synthesis and the assistant says "Working." while it runs.

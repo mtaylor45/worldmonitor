@@ -88,12 +88,6 @@ class Config:
     # this is the single biggest per-turn saving available.
     llm_thinking: bool = _env("WM_LLM_THINKING", "0") != "0"
 
-    # Optional tier-1 model for short conversational replies. Off by default:
-    # a second resident model costs RAM and another thing to keep loaded, and
-    # the pattern tier already covers the commands people repeat. Measure
-    # before enabling. Suggested: qwen3-1.7b-q4_k_m.
-    fast_model: str = _env("WM_FAST_MODEL", "")
-
     # 8K is enough for the tool schemas plus a short turn, and every unused
     # token of context is prompt-processing time on a CPU.
     llm_context: int = int(_env("WM_LLM_CONTEXT", "8192"))
@@ -155,8 +149,13 @@ class Config:
     alert_speak: bool = _env("WM_ALERT_SPEAK", "1") != "0"
 
     # Kokoro first, Piper if CPU latency disappoints (docs/VOICE-CHARACTER.md).
+    # An unknown name raises at startup rather than falling back silently: the
+    # operator is present then and absent forever afterwards.
     tts_engine: str = _env("WM_TTS_ENGINE", "kokoro")
+    #: Kokoro voice name, or a path to a Piper .onnx voice.
     tts_voice: str = _env("WM_TTS_VOICE", "af_sarah")
+    #: Piper ships as a static binary; only read when tts_engine is "piper".
+    piper_binary: str = _env("WM_PIPER_BINARY", "piper")
 
     # Post-TTS signal chain. Disable to audition a raw voice against a
     # processed one, which is the only way to hear what the chain is doing.

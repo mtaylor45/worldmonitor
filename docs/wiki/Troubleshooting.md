@@ -1,5 +1,10 @@
 # Troubleshooting
 
+**Start with `make -C deploy doctor`.** It checks the audio device, the wake
+model, the speech engine, the model server, the dashboard API and the alert
+rules, and names a remedy for each — which covers most of what follows. The
+rest of this page is for what it cannot see.
+
 Symptom first. Everything here is a real failure mode of this system, not a
 generic checklist.
 

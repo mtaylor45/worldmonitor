@@ -19,6 +19,7 @@ from typing import Any
 from .commands import RESPONSE_SCHEMA, SYSTEM_PROMPT, build_prompt
 from .config import Config
 
+
 class WhisperSTT:
     """faster-whisper. `small.en` int8 per SCOPE.md §7.3."""
 
@@ -177,6 +178,77 @@ class KokoroTTS:
         except Exception:
             # Unprocessed audio is still a working assistant; silence is not.
             return wav
+
+
+class PiperTTS:
+    """Piper, the fallback when Kokoro's CPU latency disappoints.
+
+    `docs/VOICE-CHARACTER.md` names Piper as the hedge for exactly that case,
+    and until now `WM_TTS_ENGINE` could not reach it - the setting was read and
+    never consumed, so the knob was dead in the situation it exists for.
+
+    Piper is a subprocess rather than a library: it ships as a static binary
+    with an ONNX voice beside it, and shelling out avoids a Python dependency
+    on an image that already carries two inference stacks.
+    """
+
+    def __init__(self, config: Config) -> None:
+        self._voice = config.tts_voice
+        self._binary = config.piper_binary
+        self._chain = config.signal_chain
+
+    async def synthesize(self, text: str) -> bytes:
+        process = await asyncio.create_subprocess_exec(
+            self._binary,
+            "--model",
+            self._voice,
+            "--output_file",
+            "-",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        wav, err = await process.communicate(text.encode())
+        if process.returncode != 0 or not wav:
+            raise RuntimeError(
+                "piper failed: " + (err.decode(errors="replace").strip() or "no audio")
+            )
+
+        if not self._chain:
+            return wav
+        from . import signal_chain  # noqa: PLC0415
+
+        try:
+            return await signal_chain.process(wav)
+        except Exception:
+            # Unprocessed audio is still a working assistant; silence is not.
+            return wav
+
+
+#: Engine name -> adapter. `build_tts` selects from this rather than a chain of
+#: ifs, so adding an engine is one entry and the unknown-name error can name
+#: what is actually available.
+TTS_ENGINES: dict[str, type] = {"kokoro": KokoroTTS, "piper": PiperTTS}
+
+
+def build_tts(config: Config):
+    """Builds the configured speech engine.
+
+    An unknown name raises rather than falling back silently. A panel speaking
+    in a voice nobody chose is a worse outcome than one that refuses to start
+    and says which names it knows - this is the only place in the sidecar where
+    failing loudly beats degrading, because the operator is present at startup
+    and absent forever afterwards.
+    """
+    engine = TTS_ENGINES.get(config.tts_engine)
+    if engine is None:
+        raise ValueError(
+            "unknown WM_TTS_ENGINE "
+            + repr(config.tts_engine)
+            + "; known engines: "
+            + ", ".join(sorted(TTS_ENGINES))
+        )
+    return engine(config)
 
 
 class PipeAudio:

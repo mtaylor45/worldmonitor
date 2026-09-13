@@ -101,10 +101,8 @@ class Pipeline:
         *,
         clock: Callable[[], float] = time.monotonic,
         tools: ToolRegistry | None = None,
-        fast_model: bool = False,
     ) -> None:
         self._tools = tools
-        self._fast_model = fast_model
         self._stt = stt
         self._llm = llm
         self._tts = tts
@@ -158,7 +156,7 @@ class Pipeline:
             # the most valuable thing the pipeline does is skip it. A wall
             # panel gets "show the map" far more often than it gets a
             # geopolitical question.
-            decision = route(turn.transcript, self._snapshot, fast_model=self._fast_model)
+            decision = route(turn.transcript, self._snapshot)
             turn.tier = decision.tier.name.lower()
             if decision.tier is Tier.DIRECT:
                 if decision.action:

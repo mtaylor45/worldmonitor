@@ -148,21 +148,21 @@ page automatically.
 
 ---
 
-## Sprint 1 · Correctness and the ground to build on
+## Sprint 1 · Correctness and the ground to build on — **done**
 
 *Goal: no lost alerts, and a panel that can be brought up in one command and
 says why when it cannot.*
 
-**S1-1 — Alert state on connect** *(F1)*
+**✅ S1-1 — Alert state on connect** *(F1)*
 Send current alert state on a new connection. Test: reconnect during a live
 alert receives an `alert` frame naming the region.
 
-**S1-2 — Hold an alert raised mid-turn** *(F2)*
+**✅ S1-2 — Hold an alert raised mid-turn** *(F2)*
 Move the turn guard ahead of `to_announce()`; hold rather than drop. Tests: an
 alert raised mid-turn is spoken after the turn; the interval is not consumed by
 an alert that was never spoken.
 
-**S1-3 — One-command bring-up**
+**✅ S1-3 — One-command bring-up**
 A fork-owned `deploy/Makefile` — **not** upstream's `Makefile`, which is
 upstream's proto tooling and must stay untouched:
 
@@ -176,18 +176,25 @@ make -C deploy doctor    # preflight
 `models` matters most: three weight files today are fetched by hand into
 volumes with no checksums and no manifest.
 
-**S1-4 — `doctor` preflight**
+**✅ S1-4 — `doctor` preflight**
 One command answering, before the panel is trusted: is the audio device
 present and readable; is a wake model loaded, or is this push-to-talk only; is
 the model server answering; is the dashboard API answering; do the alert rules
 parse; is `data-wm-alert` reaching a connected dashboard. Every one of these
 fails silently today.
 
-**S1-5 — Drop `WM_FAST_MODEL`, wire `WM_TTS_ENGINE`** *(F3, F4)*
+**✅ S1-5 — Drop `WM_FAST_MODEL`, wire `WM_TTS_ENGINE`** *(F3, F4)*
 Delete the inert tier; add the Piper adapter and select on the value.
 
 **Exit:** a fresh NUC goes from clean Ubuntu to a running panel with two
 commands, and `doctor` names anything missing. No alert can be lost.
+
+**Landed.** Both alert defects fixed with regression tests built from the
+reproductions; the fast tier deleted and Piper wired behind `WM_TTS_ENGINE`;
+`deploy/Makefile` with a checksum-verifying model fetch; and `wm_voice.doctor`,
+six probes that each name a remedy. 230 sidecar tests, up from 207. What is
+still unverified is the one thing that needs the panel: `make -C deploy kiosk`
+has never run on real hardware.
 
 ---
 

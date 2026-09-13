@@ -7,6 +7,9 @@ and every value is overridable so the same image runs on a workstation.
 Set them in `voice-sidecar/docker-compose.yml`, or export them before
 `python -m wm_voice`.
 
+**`make -C deploy doctor` checks most of this for you**, and names a remedy
+for anything it does not like. Run it before trusting a panel.
+
 ---
 
 ## Server
@@ -59,7 +62,6 @@ entire latency budget on silence after a two-word command.
 | `WM_LLM_THINKING` | `0` | Qwen3 non-thinking mode. **The biggest per-turn saving available** |
 | `WM_LLM_CONTEXT` | `8192` | Every unused token of context is prompt-processing time |
 | `WM_LLM_THREADS` | `8` | Benchmark 6 against 8 — the NUC has 4 physical cores |
-| `WM_FAST_MODEL` | *(empty)* | Optional tier-1 model. Off by default; measure first |
 | `WM_API_URL` | `http://127.0.0.1:3000` | Where the data tools and the alert poller fetch from |
 
 ## Proactive alerts
@@ -79,8 +81,9 @@ See [Proactive Alerts](Proactive-Alerts) for the reasoning behind each guard.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `WM_TTS_ENGINE` | `kokoro` | Piper if CPU latency disappoints |
-| `WM_TTS_VOICE` | `af_sarah` | Audition on the panel, not in headphones |
+| `WM_TTS_ENGINE` | `kokoro` | `kokoro` or `piper`. An unknown name refuses to start rather than falling back silently |
+| `WM_PIPER_BINARY` | `piper` | Only read when the engine is `piper` |
+| `WM_TTS_VOICE` | `af_sarah` | Kokoro voice name, or a path to a Piper `.onnx`. Audition on the panel, not in headphones |
 | `WM_SIGNAL_CHAIN` | `1` | `0` to hear a raw voice against a processed one |
 
 ---

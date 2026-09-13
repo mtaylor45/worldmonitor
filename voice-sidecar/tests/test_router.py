@@ -111,12 +111,14 @@ class FullTier(unittest.TestCase):
         self.assertEqual(match_panel("show energy", panels), "energy")
 
 
-class FastTier(unittest.TestCase):
-    def test_the_fast_tier_is_only_used_when_configured(self) -> None:
-        # A second resident model costs RAM; it is opt-in.
-        text = "acknowledge"
-        self.assertEqual(route(text, SNAPSHOT).tier, Tier.FULL)
-        self.assertEqual(route(text, SNAPSHOT, fast_model=True).tier, Tier.FAST)
+class Tiers(unittest.TestCase):
+    def test_there_are_two_tiers(self) -> None:
+        # A middle tier was specified and removed: it was never wired into the
+        # pipeline, so the setting that enabled it loaded a second resident
+        # model and changed nothing. Anything tier 0 does not recognise goes to
+        # the full model.
+        self.assertEqual([t.name for t in Tier], ["DIRECT", "FULL"])
+        self.assertEqual(route("acknowledge", SNAPSHOT).tier, Tier.FULL)
 
 
 class Normalising(unittest.TestCase):

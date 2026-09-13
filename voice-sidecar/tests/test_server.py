@@ -541,6 +541,190 @@ class AlertLoop(unittest.TestCase):
         self.assertEqual(self.alerts(socket)[0]["region"], "Yemen")
 
 
+class AlertReconnect(unittest.TestCase):
+    """A dashboard that connects while an alert is live.
+
+    The kiosk reloads itself, and alert frames are edge-triggered, so without
+    this a panel that reloaded during an alert renders calm until the alert
+    clears and raises again - a red-alert display showing nothing.
+    """
+
+    def build(self):
+        events = Broadcast()
+        pipeline = AlertPipeline()
+        payloads: list[object] = []
+
+        async def fetch() -> object:
+            return payloads.pop(0)
+
+        sidecar = Sidecar(
+            pipeline,  # type: ignore[arg-type]
+            events,
+            alerts=AlertWatcher(parse_rules("*>85"), min_interval_s=0.0),
+            fetch_risk_scores=fetch,
+        )
+        return sidecar, payloads
+
+    def test_a_reconnecting_dashboard_is_told_about_a_live_alert(self) -> None:
+        async def scenario() -> list[dict]:
+            sidecar, payloads = self.build()
+            payloads.append(risk_scores(("Sudan", 87.0)))
+            await sidecar._poll_alerts()
+            socket = FakeSocket()
+            await sidecar.handle(socket)
+            return [json.loads(f) for f in socket.sent]
+
+        frames = asyncio.run(scenario())
+        self.assertEqual([f["type"] for f in frames], ["state", "alert"])
+        # And it names what is wrong, so the panel can label it.
+        self.assertEqual((frames[1]["active"], frames[1]["region"]), (True, "Sudan"))
+
+    def test_a_calm_dashboard_is_not_sent_a_phantom_alert(self) -> None:
+        async def scenario() -> list[str]:
+            sidecar, payloads = self.build()
+            payloads.append(risk_scores(("Sudan", 40.0)))
+            await sidecar._poll_alerts()
+            socket = FakeSocket()
+            await sidecar.handle(socket)
+            return [json.loads(f)["type"] for f in socket.sent]
+
+        self.assertEqual(asyncio.run(scenario()), ["state"])
+
+    def test_a_dashboard_connecting_after_a_clear_is_not_told_to_alert(self) -> None:
+        async def scenario() -> list[str]:
+            sidecar, payloads = self.build()
+            payloads.extend([risk_scores(("Sudan", 87.0)), risk_scores(("Sudan", 60.0))])
+            await sidecar._poll_alerts()
+            await sidecar._poll_alerts()
+            socket = FakeSocket()
+            await sidecar.handle(socket)
+            return [json.loads(f)["type"] for f in socket.sent]
+
+        self.assertEqual(asyncio.run(scenario()), ["state"])
+
+
+class AlertHeldDuringTurn(unittest.TestCase):
+    """An alert raised while the user is mid-turn.
+
+    Raising is edge-triggered: a region already firing raises nothing on the
+    next poll, so an alert dropped because a turn was running is never spoken
+    at all. Asking the assistant a question must not cost the next alert.
+    """
+
+    def build(self, *, min_interval_s: float = 900.0):
+        events = Broadcast()
+        pipeline = AlertPipeline()
+        watcher = AlertWatcher(parse_rules("*>85"), min_interval_s=min_interval_s)
+        payloads: list[object] = []
+
+        async def fetch() -> object:
+            return payloads.pop(0)
+
+        sidecar = Sidecar(
+            pipeline,  # type: ignore[arg-type]
+            events,
+            alerts=watcher,
+            fetch_risk_scores=fetch,
+        )
+        sidecar._capture = lambda **_: _immediate(b"audio")  # type: ignore[assignment]
+        return sidecar, pipeline, watcher, payloads
+
+    def test_an_alert_raised_mid_turn_is_spoken_once_the_turn_ends(self) -> None:
+        async def scenario() -> list[str]:
+            sidecar, pipeline, _, payloads = self.build()
+            payloads.extend([risk_scores(("Sudan", 87.0)), risk_scores(("Sudan", 88.0))])
+            await sidecar.start_turn()
+            with unittest.TestCase().assertLogs("wm_voice", level="INFO"):
+                await sidecar._poll_alerts()      # crosses mid-turn
+            await asyncio.sleep(0.15)             # turn finishes
+            await sidecar._poll_alerts()          # still above the line
+            return pipeline.announced
+
+        self.assertEqual(
+            asyncio.run(scenario()),
+            ["Alert. Instability index for Sudan has risen to 87."],
+        )
+
+    def test_the_spoken_interval_is_not_spent_on_an_alert_nobody_heard(self) -> None:
+        # `to_announce` stamps the interval. Calling it for an alert that
+        # cannot be spoken yet would buy fifteen minutes of silence with an
+        # utterance that never happened.
+        async def scenario() -> bool:
+            sidecar, _, watcher, payloads = self.build()
+            payloads.append(risk_scores(("Sudan", 87.0)))
+            await sidecar.start_turn()
+            with unittest.TestCase().assertLogs("wm_voice", level="INFO"):
+                await sidecar._poll_alerts()
+            spent = watcher._last_spoke is not None
+            await sidecar.cancel()
+            return spent
+
+        self.assertFalse(asyncio.run(scenario()))
+
+    def test_the_display_asserts_immediately_even_so(self) -> None:
+        # Only the voice waits. The frame goes red the moment the score crosses.
+        async def scenario() -> list[dict]:
+            sidecar, _, _, payloads = self.build()
+            socket = FakeSocket()
+            sidecar._events.add(socket)
+            payloads.append(risk_scores(("Sudan", 87.0)))
+            await sidecar.start_turn()
+            with unittest.TestCase().assertLogs("wm_voice", level="INFO"):
+                await sidecar._poll_alerts()
+            frames = [json.loads(f) for f in socket.sent if json.loads(f)["type"] == "alert"]
+            await sidecar.cancel()
+            return frames
+
+        self.assertEqual([f["active"] for f in asyncio.run(scenario())], [True])
+
+    def test_quiet_hours_discard_rather_than_defer(self) -> None:
+        # Holding through a deliberate silence would deliver a queue of alerts
+        # at 07:00, which is the failure the interval exists to prevent.
+        from datetime import datetime
+
+        async def scenario() -> list[str]:
+            events = Broadcast()
+            pipeline = AlertPipeline()
+            watcher = AlertWatcher(
+                parse_rules("*>85"),
+                min_interval_s=0.0,
+                quiet_hours=parse_window("22:00-07:00"),
+                wall_clock=lambda: datetime(2026, 3, 1, 3, 0),
+            )
+            payloads = [risk_scores(("Sudan", 87.0)), risk_scores(("Sudan", 88.0))]
+
+            async def fetch() -> object:
+                return payloads.pop(0)
+
+            sidecar = Sidecar(
+                pipeline, events, alerts=watcher, fetch_risk_scores=fetch  # type: ignore[arg-type]
+            )
+            with unittest.TestCase().assertLogs("wm_voice.alerts", level="INFO"):
+                await sidecar._poll_alerts()
+            await sidecar._poll_alerts()
+            return pipeline.announced
+
+        self.assertEqual(asyncio.run(scenario()), [])
+
+    def test_held_alerts_cannot_grow_without_bound(self) -> None:
+        # Insurance against a playback that wedges on a panel running for
+        # months, not an expected path.
+        from wm_voice.server import MAX_HELD_ALERTS
+
+        async def scenario() -> int:
+            sidecar, _, _, payloads = self.build()
+            regions = [(f"Region{i}", 90.0) for i in range(MAX_HELD_ALERTS + 8)]
+            payloads.append(risk_scores(*regions))
+            await sidecar.start_turn()
+            with unittest.TestCase().assertLogs("wm_voice", level="INFO"):
+                await sidecar._poll_alerts()
+            held = len(sidecar._held_alerts)
+            await sidecar.cancel()
+            return held
+
+        self.assertEqual(asyncio.run(scenario()), MAX_HELD_ALERTS)
+
+
 class AlertLifecycle(unittest.TestCase):
     def sidecar(self, rules: str, *, audio: object = None) -> Sidecar:
         async def fetch() -> object:

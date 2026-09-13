@@ -1,6 +1,6 @@
 """Intent routing: decide how much model a turn actually needs.
 
-Three tiers, cheapest first. On a 4-core Skylake the model is the whole latency
+Two tiers, cheapest first. On a 4-core Skylake the model is the whole latency
 budget, so the most valuable thing this file does is avoid using one.
 
     "zoom out"                    -> tier 0, no model at all
@@ -12,10 +12,12 @@ commands people actually repeat.** A wall panel gets "louder", "next", "show
 the map" far more often than it gets a geopolitical question, and none of those
 should wake an 8B.
 
-Tier 1 (a small model for short conversational replies) is configured but
-optional: a second resident model costs RAM and adds a second thing to keep
-loaded, and it only pays off once tier 0's coverage stops growing. Measure
-before enabling it.
+A middle tier - a small model for short conversational replies - was specified
+and removed. It was never wired into the pipeline, so the setting that enabled
+it loaded a second resident model and changed nothing; a documented knob that
+does nothing is worse than an absent one. It belongs back here when tier 0's
+coverage stops growing AND a measurement says a 1.7B beats falling through to
+the 8B, not before.
 """
 
 from __future__ import annotations
@@ -30,8 +32,6 @@ class Tier(Enum):
 
     #: Pattern match. No model, no network, sub-millisecond.
     DIRECT = 0
-    #: Small model. Short conversational replies with no tool use.
-    FAST = 1
     #: Full model with tools. Anything needing data or several steps.
     FULL = 2
 
@@ -115,7 +115,7 @@ def match_panel(text: str, panels: dict[str, str]) -> str | None:
     return hits[0] if len(hits) == 1 else None
 
 
-def route(text: str, snapshot: dict[str, object], *, fast_model: bool = False) -> Route:
+def route(text: str, snapshot: dict[str, object]) -> Route:
     """Chooses a tier for one utterance."""
     normalised = normalise(text)
     if not normalised:
@@ -150,6 +150,4 @@ def route(text: str, snapshot: dict[str, object], *, fast_model: bool = False) -
     if NEEDS_DATA.search(normalised):
         return Route(Tier.FULL, reason="needs data or reasoning")
 
-    if fast_model:
-        return Route(Tier.FAST, reason="short utterance, no data needed")
-    return Route(Tier.FULL, reason="no fast path available")
+    return Route(Tier.FULL, reason="not a fixed command")

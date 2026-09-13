@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from .adapters import ChatLLM, KokoroTTS, PipeAudio, WhisperSTT
+from .adapters import ChatLLM, PipeAudio, WhisperSTT, build_tts
 from .alerts import AlertWatcher, parse_rules, parse_window
 from .audio import AudioSource
 from .config import CONFIG
@@ -30,11 +30,10 @@ def main() -> None:
     pipeline = Pipeline(
         stt=WhisperSTT(CONFIG),
         llm=ChatLLM(CONFIG, tools),
-        tts=KokoroTTS(CONFIG),
+        tts=build_tts(CONFIG),
         audio=PipeAudio(),
         events=events,
         tools=tools,
-        fast_model=bool(CONFIG.fast_model),
     )
     # One microphone, two consumers: the wake detector listens continuously
     # while capture records on demand. Opening the device twice is how you get

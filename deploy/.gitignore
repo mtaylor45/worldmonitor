@@ -1,0 +1,5 @@
+# Fetched weights: multiple gigabytes, reproducible from models.conf with
+# verified checksums. Kept out of the repo rather than out of .gitignore at the
+# root, which is upstream's file — editing it would spend an upstream seam on
+# a deployment detail (docs/UPSTREAM-DIFF.md).
+models/

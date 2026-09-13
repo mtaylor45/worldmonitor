@@ -12,7 +12,11 @@ services:
     devices:
       - /dev/snd:/dev/snd
     volumes:
-      - wm-voice-models:/models
+      # Bind-mounted, not a named volume: `make -C deploy models` fetches and
+      # verifies weights on the host, and a named volume would leave them
+      # somewhere the container cannot see. Read-only — the sidecar consumes
+      # these, it never writes them.
+      - ../deploy/models:/models:ro
     environment:
       WM_LLM_URL: http://127.0.0.1:8080/v1
       WM_LLM_MODEL: qwen3-8b-q4_k_m
@@ -39,6 +43,9 @@ services:
       # Silences the voice, never the display: an alert raised at 3am is still
       # on the panel at 3am, it simply does not announce itself. Local time.
       WM_ALERT_QUIET_HOURS: "22:00-07:00"
+      # Kokoro by default. Switch to piper if CPU latency disappoints, and
+      # point WM_TTS_VOICE at the .onnx `make -C deploy models` fetched.
+      WM_TTS_ENGINE: kokoro
     restart: unless-stopped
 
   # llama.cpp rather than Ollama: native Qwen tool-call parsing, an explicit
@@ -48,7 +55,7 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server
     network_mode: host
     volumes:
-      - wm-llm-models:/models
+      - ../deploy/models/llm:/models:ro
     command: >
       --model /models/qwen3-8b-q4_k_m.gguf
       --alias qwen3-8b-q4_k_m
@@ -57,7 +64,3 @@ services:
       --threads 8
       --jinja
     restart: unless-stopped
-
-volumes:
-  wm-voice-models:
-  wm-llm-models:

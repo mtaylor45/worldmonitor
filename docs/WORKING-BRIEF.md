@@ -49,7 +49,7 @@ Log every upstream file touched in `docs/UPSTREAM-DIFF.md`.
 | `src/boot.ts` | Composition root. The single upstream seam calls this |
 | `src/context/` | Panel state snapshot for the LLM (P3) |
 | `src/alert/` | Proactive alert state — the `data-wm-alert` attribute and its tone (P4) |
-| `deploy/kiosk/` | `cage` + Chromium + systemd kiosk profile |
+| `deploy/` | Fork-owned bring-up: `Makefile`, verified model fetch, kiosk profile |
 | `preview/lcars-preview.html` | Standalone 1280x720 mock, no build step |
 | `preview/lcars-style-guide.html` | The design system, rendered. Open it when a decision needs to be *seen* |
 | `docs/DESIGN-SYSTEM.md` | The same rules as a checklist |
@@ -268,6 +268,21 @@ The phrasing layer still runs, because it runs on every spoken line.
 false-valued attribute is still an attribute — the same lossless-teardown rule
 the chrome follows, and there is a test that cycles it twenty times.
 
+**Every dependency fails silently, so there is a preflight.** No microphone, no
+wake model, a model server that is not up, an upstream API whose schema moved,
+alert rules with a typo — each produces a panel that looks alive and does
+nothing. `make -C deploy doctor` checks all of them and names a **remedy**, not
+just a verdict: the operator is present exactly once, at install, and absent
+forever afterwards. It is also the one place in the sidecar where failing loudly
+beats degrading — an unknown `WM_TTS_ENGINE` refuses to start rather than
+speaking in a voice nobody chose.
+
+**Deployment lives in `deploy/Makefile`, never the root one.** That one is
+upstream's protobuf toolchain; putting our bring-up there would spend a third
+seam on it. Weights are fetched by `models.conf` with sha256 values read from
+Hugging Face's own API, verified on every run, and a mismatch is refused rather
+than re-fetched.
+
 ---
 
 ## Conventions
@@ -285,8 +300,11 @@ the chrome follows, and there is a test that cycles it twenty times.
 # Engine behaviour, cycle stability, chrome re-mount
 npx vitest run --config vitest.dom.config.mts tests/dom/theme-engine.test.mts
 
-# Sidecar: phrasing, wake word, alerts, protocol contract
+# Sidecar: phrasing, wake word, alerts, preflight, protocol contract
 cd voice-sidecar && python3 -m unittest discover -s tests -t .
+
+# Preflight against a real machine: audio, models, API, alert rules
+make -C deploy doctor
 
 # Extraction still matches upstream's main.css
 npx vitest run --config vitest.dom.config.mts tests/dom/theme-token-contract.test.mts
