@@ -216,6 +216,9 @@ test.describe('upstream chrome the kiosk does not want', () => {
       return {
         banner: h('.pro-banner-slot'),
         tabs: h('.dashboard-tabs-mount'),
+        header: h('.header'),
+        footer: h('.site-footer'),
+        legend: h('.map-legend'),
         map: h('#mapSection'),
       };
     });
@@ -256,6 +259,69 @@ test.describe('upstream chrome the kiosk does not want', () => {
     expect(suppressed.map - restored.map, 'the map did not gain the space').toBeGreaterThan(60);
   });
 
+  test('the site header and footer take no space either', async ({ page }) => {
+    // Upstream's navigation: search, settings, sign-in, and a footer of
+    // marketing links. There is no pointer to click them with, no account to
+    // sign into, and nowhere to navigate to. 97px of a 400px display.
+    await load(page, 'dashboard', DASHBOARD);
+    const measured = await heights(page);
+
+    expect(measured.header, 'site header still occupies space').toBe(0);
+    expect(measured.footer, 'site footer still occupies space').toBe(0);
+  });
+
+  test('the skip link is kept, because it costs nothing', async ({ page }) => {
+    // `position: fixed`, so it takes no layout at all. A keyboard is unlikely
+    // on a kiosk, but free accessibility should not be thrown away to save
+    // zero pixels — and the temptation to sweep it up with the rest of the
+    // site furniture is exactly why this is pinned.
+    await load(page, 'dashboard', DASHBOARD);
+
+    const skip = await page.locator('.skip-link').evaluate((el) => ({
+      display: getComputedStyle(el).display,
+      position: getComputedStyle(el).position,
+    }));
+
+    expect(skip.display).not.toBe('none');
+    expect(skip.position, 'a static skip link would cost real layout').toBe('fixed');
+  });
+
+  test('map controls move off the viewing panel, but the legend stays', async ({ page }) => {
+    // The split the two-display build exists to make: the 2U panel is for
+    // viewing, the 1U console is for control. The layer toggles covered 30% of
+    // the map and the time slider another 5% — a third of the view, taken by
+    // the furniture describing it.
+    await load(page, 'dashboard', DASHBOARD);
+
+    const covered = await page.evaluate(() => {
+      const map = document.querySelector('#mapSection')!.getBoundingClientRect();
+      let area = 0;
+      for (const sel of ['.layer-toggles', '.time-slider']) {
+        const el = document.querySelector(sel);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width > 10 && r.height > 10) area += r.width * r.height;
+      }
+      return Math.round((100 * area) / (map.width * map.height));
+    });
+
+    expect(covered, 'controls still sitting on the map').toBe(0);
+
+    // The legend is NOT a control. It is the key to reading the colours, so
+    // removing it in the name of making the map more readable would be
+    // exactly backwards.
+    const { legend } = await heights(page);
+    expect(legend, 'the legend was swept up with the controls').toBeGreaterThan(0);
+  });
+
+  test('the 1280x720 fallback keeps its map controls', async ({ page }) => {
+    // Scoped to `dashboard` on purpose: at 720px the panel surface has the
+    // height to carry them, and it is the layout you develop against.
+    await load(page, 'panel', { width: 1280, height: 720 });
+
+    await expect(page.locator('.layer-toggles')).toBeVisible();
+  });
+
   test('the suppression does not leak into the default theme', async ({ page }) => {
     // The safety net the whole engine rests on: `default` declares nothing, so
     // switching to it restores upstream exactly — including the parts of
@@ -270,17 +336,23 @@ test.describe('upstream chrome the kiosk does not want', () => {
     // the rule.
     const probe = () =>
       page.evaluate(() => {
-        const slot = document.createElement('div');
-        slot.className = 'pro-banner-slot';
-        const tabs = document.createElement('div');
-        tabs.className = 'dashboard-tabs-mount';
-        document.body.append(slot, tabs);
+        const make = (cls: string) => {
+          const el = document.createElement('div');
+          el.className = cls;
+          document.body.appendChild(el);
+          return el;
+        };
+        const slot = make('pro-banner-slot');
+        const tabs = make('dashboard-tabs-mount');
+        const header = make('header');
+        const footer = make('site-footer');
         const result = {
           slot: getComputedStyle(slot).display,
           tabs: getComputedStyle(tabs).display,
+          header: getComputedStyle(header).display,
+          footer: getComputedStyle(footer).display,
         };
-        slot.remove();
-        tabs.remove();
+        for (const el of [slot, tabs, header, footer]) el.remove();
         return result;
       });
 
@@ -288,14 +360,17 @@ test.describe('upstream chrome the kiosk does not want', () => {
     expect(await probe(), 'LCARS is not suppressing them').toEqual({
       slot: 'none',
       tabs: 'none',
+      header: 'none',
+      footer: 'none',
     });
 
     // Surface stays `dashboard`; only the THEME changes. Passing 'default' as
     // the surface would leave the page on LCARS and quietly assert nothing.
     await load(page, 'dashboard', DASHBOARD, 'default');
     const underDefault = await probe();
-    expect(underDefault.slot, 'default theme is no longer an identity theme').not.toBe('none');
-    expect(underDefault.tabs, 'default theme is no longer an identity theme').not.toBe('none');
+    for (const [name, display] of Object.entries(underDefault)) {
+      expect(display, `default theme is no longer an identity theme (${name})`).not.toBe('none');
+    }
   });
 });
 

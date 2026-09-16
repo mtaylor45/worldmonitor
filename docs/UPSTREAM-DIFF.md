@@ -33,6 +33,13 @@ were hiding, so each is pinned by a test.
 | `.pro-banner-slot`, `.pro-banner` | Upsell banner. 40px of a 400px panel, and meaningless without an account | `e2e/two-display.spec.ts` |
 | `.dashboard-tabs-mount`, `.dashboard-tabs-bar` | Saved-layout tabs. 64px, and the kiosk has one layout | `e2e/two-display.spec.ts` |
 | `--wm-pro-banner-slot-height` | Zeroed, so a future reservation elsewhere cannot reopen the gap | `e2e/two-display.spec.ts` |
+| `.header` | Upstream's site navigation. 40px, and nothing on it is reachable without a pointer | `e2e/two-display.spec.ts` |
+| `.site-footer` | Marketing links and a copyright line. 57px | `e2e/two-display.spec.ts` |
+| `.layer-toggles`, `.time-slider` | Map controls covering 35% of the map. `dashboard` surface only | `e2e/two-display.spec.ts` |
+
+`.skip-link` and `.map-legend` are deliberately NOT in this table — the first
+costs no layout and is the only accessible thing in that furniture, the second
+is what makes the map readable rather than something sitting on top of it.
 
 ## Files modified
 

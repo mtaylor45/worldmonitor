@@ -365,6 +365,40 @@ than leaving the banner up.
 net — switching to it must restore upstream exactly, including the parts of
 upstream we would rather not look at.
 
+**Upstream's site header and footer go too, and the map controls move off the
+viewing panel.** Together with the banner and tab bar that is 201px of a 400px
+display reclaimed: the map measured **106px** originally and **306px** after.
+
+| Removed | Cost it was carrying |
+|---|---|
+| Pro banner + slot | 40px |
+| Dashboard tab bar | 64px |
+| Site header (search, settings, sign-in) | 40px |
+| Site footer (Countries · Pricing · Docs · ©) | 57px |
+| `.layer-toggles` + `.time-slider` | 35% of the map's own area |
+
+**`.skip-link` is deliberately kept.** It is `position: fixed`, so it costs no
+layout at all, and it is the one piece of that furniture that still does
+something. Free accessibility is not worth throwing away to save zero pixels,
+and the temptation to sweep it up with the rest is why there is a test.
+
+**The map legend stays; the map controls do not.** The legend is 29px and is
+the key to reading the colours — removing it in the name of making the map more
+readable would be exactly backwards. The layer toggles and time slider are
+controls, and a control occupying a third of the view it controls is on the
+wrong display: **the 2U panel is for viewing and the 1U console is for
+control.**
+
+**Map overlays are scoped to the `dashboard` surface only.** At 1280x720 the
+`panel` surface has the height to carry them, and that is the layout you
+develop against — losing them there would make the fallback harder to work with
+for no gain.
+
+**The a11y suites are unaffected, and that is the identity theme earning its
+keep.** `a11y-landmarks-tablist` and `a11y-axe-scan` both load `/` with no
+theme pinned, so they run on `default`, where upstream's header and its
+`banner` landmark are exactly where upstream put them.
+
 ---
 
 ## Pages

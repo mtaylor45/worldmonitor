@@ -895,3 +895,49 @@
 :root[data-wm-theme^="lcars"] {
   --wm-pro-banner-slot-height: 0px;
 }
+
+/* ---------- The site shell ----------
+
+   Upstream's header row (search, settings, sign-in, region picker) and site
+   footer (Countries · Chokepoints · Pricing · Blog · Docs · © 2026) are the
+   navigation of a hosted product. On a wall panel there is no pointer to
+   click them with, no account to sign into, and nowhere to navigate to — and
+   they cost 97px of a 400px display between them, all of it taken from the
+   map.
+
+   Removed at the theme layer for the same reason as the Pro banner: a rule
+   here costs nothing at merge time, where deleting the components upstream
+   would conflict on every release forever.
+
+   `.skip-link` is deliberately left alone. It is `position: fixed`, so it
+   costs no layout at all, and it is the one piece of this furniture that
+   still does something — a keyboard is unlikely on a kiosk but free
+   accessibility should not be thrown away to save zero pixels. */
+
+:root[data-wm-theme^="lcars"] .header,
+:root[data-wm-theme^="lcars"] .site-footer {
+  display: none !important;
+}
+
+/* ---------- Map overlays, on the 2U display only ----------
+
+   The layer toggles cover 30% of the map and the time slider another 5%. On a
+   1280x400 panel the map is roughly 300px tall, so a third of it is furniture
+   sitting on top of the thing it describes.
+
+   This is the split the two-display build exists to make: **the 2U panel is
+   for viewing and the 1U console is for control.** A control that occupies a
+   third of the view it controls is on the wrong display.
+
+   Scoped to `dashboard` on purpose. At 1280x720 the `panel` surface has the
+   height to carry them, and that is the layout you develop against — losing
+   the toggles there would make the fallback harder to work with for no gain.
+
+   THE LEGEND STAYS. It is 29px, it is not a control, and it is the key to
+   reading the colours on the map — removing it in the name of making the map
+   more readable would be exactly backwards. */
+
+:root[data-wm-surface="dashboard"][data-wm-theme^="lcars"] .layer-toggles,
+:root[data-wm-surface="dashboard"][data-wm-theme^="lcars"] .time-slider {
+  display: none !important;
+}
