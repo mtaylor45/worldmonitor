@@ -17,9 +17,14 @@ const SHELL = '[data-wm-shell]';
 const DASHBOARD = { width: 1280, height: 400 };
 const NAV = { width: 1424, height: 280 };
 
-async function load(page: Page, surface: string, size: { width: number; height: number }) {
+async function load(
+  page: Page,
+  surface: string,
+  size: { width: number; height: number },
+  theme = 'lcars',
+) {
   await page.setViewportSize(size);
-  await page.goto(`/?wm-theme=lcars&wm-surface=${surface}`, {
+  await page.goto(`/?wm-theme=${theme}&wm-surface=${surface}`, {
     waitUntil: 'domcontentloaded',
   });
   await page.waitForFunction(
@@ -197,6 +202,100 @@ test.describe('the two displays together', () => {
       .toBe('engineering');
 
     await context.close();
+  });
+});
+
+test.describe('upstream chrome the kiosk does not want', () => {
+  /** Rendered height of a selector, 0 when it is absent or hidden. */
+  async function heights(page: Page) {
+    return page.evaluate(() => {
+      const h = (sel: string) => {
+        const el = document.querySelector(sel);
+        return el ? Math.round(el.getBoundingClientRect().height) : 0;
+      };
+      return {
+        banner: h('.pro-banner-slot'),
+        tabs: h('.dashboard-tabs-mount'),
+        map: h('#mapSection'),
+      };
+    });
+  }
+
+  test('the Pro banner and tab bar take no space under LCARS', async ({ page }) => {
+    // Between them they cost 104px of a 400px display — a quarter of the
+    // screen, taken from the map.
+    await load(page, 'dashboard', DASHBOARD);
+    const measured = await heights(page);
+
+    expect(measured.banner, 'Pro banner still occupies space').toBe(0);
+    expect(measured.tabs, 'tab bar still occupies space').toBe(0);
+  });
+
+  test('hiding them frees real estate rather than leaving a gap', async ({ page }) => {
+    // The trap: both elements have a height reserved by a PARENT that
+    // survives the child being hidden — .pro-banner-slot carries a 40px
+    // min-height and .dashboard-tabs-mount a 36px one. Hiding the banner
+    // alone leaves a band of empty surface, which is the same space and none
+    // of the information. This asserts the map actually grew.
+    await load(page, 'dashboard', DASHBOARD);
+    const suppressed = await heights(page);
+
+    // Put them back exactly as upstream would have them.
+    await page.addStyleTag({
+      content: `
+        :root[data-wm-theme^="lcars"] .pro-banner-slot,
+        :root[data-wm-theme^="lcars"] .pro-banner,
+        :root[data-wm-theme^="lcars"] .dashboard-tabs-mount,
+        :root[data-wm-theme^="lcars"] .dashboard-tabs-bar { display: revert !important; }
+        :root[data-wm-theme^="lcars"] { --wm-pro-banner-slot-height: 40px; }`,
+    });
+    await page.waitForTimeout(800);
+    const restored = await heights(page);
+
+    expect(restored.banner, 'the override did not restore the banner').toBeGreaterThan(0);
+    expect(suppressed.map - restored.map, 'the map did not gain the space').toBeGreaterThan(60);
+  });
+
+  test('the suppression does not leak into the default theme', async ({ page }) => {
+    // The safety net the whole engine rests on: `default` declares nothing, so
+    // switching to it restores upstream exactly — including the parts of
+    // upstream we would rather not look at.
+    //
+    // Asserted against a probe element rather than the real banner. Whether
+    // upstream MOUNTS the banner depends on auth hydration, entitlement and
+    // whether it was dismissed (`pro-banner-policy.ts` can return 'defer' or
+    // 'suppress' on its own), so measuring the live one would be asserting
+    // upstream's business logic and would flake whenever it legitimately chose
+    // not to show. What is ours, and what is worth pinning, is the scope of
+    // the rule.
+    const probe = () =>
+      page.evaluate(() => {
+        const slot = document.createElement('div');
+        slot.className = 'pro-banner-slot';
+        const tabs = document.createElement('div');
+        tabs.className = 'dashboard-tabs-mount';
+        document.body.append(slot, tabs);
+        const result = {
+          slot: getComputedStyle(slot).display,
+          tabs: getComputedStyle(tabs).display,
+        };
+        slot.remove();
+        tabs.remove();
+        return result;
+      });
+
+    await load(page, 'dashboard', DASHBOARD);
+    expect(await probe(), 'LCARS is not suppressing them').toEqual({
+      slot: 'none',
+      tabs: 'none',
+    });
+
+    // Surface stays `dashboard`; only the THEME changes. Passing 'default' as
+    // the surface would leave the page on LCARS and quietly assert nothing.
+    await load(page, 'dashboard', DASHBOARD, 'default');
+    const underDefault = await probe();
+    expect(underDefault.slot, 'default theme is no longer an identity theme').not.toBe('none');
+    expect(underDefault.tabs, 'default theme is no longer an identity theme').not.toBe('none');
   });
 });
 

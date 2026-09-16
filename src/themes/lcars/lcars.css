@@ -850,3 +850,48 @@
     box-shadow: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UPSTREAM CHROME THE KIOSK DOES NOT WANT
+
+   Upstream is a hosted product and carries the furniture of one: a Pro upsell
+   banner and a dashboard tab bar for managing saved layouts. Neither means
+   anything on a wall panel with no pointer, no account and one layout — and
+   between them they cost 76px of vertical space before either has rendered a
+   pixel of content. On a 2U 1280x400 display that is 19% of the screen, taken
+   from the map.
+
+   SUPPRESSED IN THE THEME, NOT IN UPSTREAM. This is precisely the trade the
+   fork rules are about: a CSS rule in our own stylesheet costs nothing at
+   merge time, where deleting the component upstream would be a conflict on
+   every release forever. Upstream keeps rendering them; the theme declines to
+   show them.
+
+   `default` is deliberately unaffected. It is the identity theme and the
+   safety net — switching to it must restore upstream exactly, including the
+   parts of upstream we would rather not look at.
+
+   HIDE THE CONTAINER, NOT THE CONTENTS. Both elements have a height reserved
+   by a parent that survives the child being hidden:
+
+     .pro-banner-slot      min-height 40px under html.wm-pro-banner-reserved
+     .dashboard-tabs-mount min-height 36px, unconditionally
+
+   Hiding `.pro-banner` alone leaves a 40px band of empty surface, which is the
+   same amount of space and none of the information — strictly worse than
+   leaving the banner up.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root[data-wm-theme^="lcars"] .pro-banner-slot,
+:root[data-wm-theme^="lcars"] .pro-banner,
+:root[data-wm-theme^="lcars"] .dashboard-tabs-mount,
+:root[data-wm-theme^="lcars"] .dashboard-tabs-bar {
+  display: none !important;
+}
+
+/* The reservation is driven by a class on <html> and a custom property, so the
+   property is zeroed as well: a future upstream rule that reserves the height
+   somewhere other than the slot would otherwise reopen the gap silently. */
+:root[data-wm-theme^="lcars"] {
+  --wm-pro-banner-slot-height: 0px;
+}

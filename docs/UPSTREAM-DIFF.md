@@ -22,6 +22,18 @@ the data.
 |---|---|---|
 | `PANEL_CATEGORY_MAP` from `src/config/panels.ts` | `src/pages/` | Build fails at `tsc`. Re-point the import; do not copy the map, or pages silently rot as upstream adds panels |
 
+## Upstream markup the theme reaches into
+
+Selectors our stylesheet targets in upstream's DOM. No upstream line changes,
+so no merge cost — but upstream renaming a class silently restores the thing we
+were hiding, so each is pinned by a test.
+
+| Selector | Why | Guarded by |
+|---|---|---|
+| `.pro-banner-slot`, `.pro-banner` | Upsell banner. 40px of a 400px panel, and meaningless without an account | `e2e/two-display.spec.ts` |
+| `.dashboard-tabs-mount`, `.dashboard-tabs-bar` | Saved-layout tabs. 64px, and the kiosk has one layout | `e2e/two-display.spec.ts` |
+| `--wm-pro-banner-slot-height` | Zeroed, so a future reservation elsewhere cannot reopen the gap | `e2e/two-display.spec.ts` |
+
 ## Files modified
 
 | File | Lines | Change | Phase |

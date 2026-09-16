@@ -344,6 +344,27 @@ the lower panel lands on the upper one. `map_to_output` per device is what
 makes touch work at all on a multi-output kiosk, and it is the most common
 thing to get wrong.
 
+**Upstream chrome the kiosk does not want is suppressed in the theme, never in
+upstream.** The Pro upsell banner and the dashboard tab bar mean nothing on a
+wall panel with no pointer, no account and one layout, and between them they
+cost **104px of a 400px display** — a quarter of the screen, taken from the
+map, which measured 106px with them and 210px without.
+
+A CSS rule in our own stylesheet costs nothing at merge time; deleting the
+components upstream would be a conflict on every release forever. Upstream
+keeps rendering them, the theme declines to show them.
+
+**Hide the container, not the contents.** Both have a height reserved by a
+parent that survives the child being hidden — `.pro-banner-slot` carries a 40px
+`min-height` under `html.wm-pro-banner-reserved`, and `.dashboard-tabs-mount`
+36px unconditionally. Hiding `.pro-banner` alone leaves a band of empty
+surface: the same space and none of the information, which is strictly worse
+than leaving the banner up.
+
+`default` is deliberately unaffected. It is the identity theme and the safety
+net — switching to it must restore upstream exactly, including the parts of
+upstream we would rather not look at.
+
 ---
 
 ## Pages
