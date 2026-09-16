@@ -26,10 +26,26 @@
  */
 
 import type { ChromeContext } from '../types';
+import { layerKeys } from '../actions';
+import { dispatchAction } from '../engine';
 import { PAGES } from '../../pages';
 
 /** Marks the page-button row so the page state can light the right one. */
 export const PAGE_BUTTON_ATTRIBUTE = 'data-wm-page-btn';
+
+/**
+ * How many map layers the console offers.
+ *
+ * Upstream renders nineteen. Ten is what fits across the stack at a size that
+ * can be hit with a fingertip, and the row keeps a fixed geometry rather than
+ * reflowing as layers come and go — a console whose buttons move defeats the
+ * muscle memory a wall panel runs on. The remainder stay reachable by voice,
+ * which enumerates the full list from the registry.
+ */
+const MAX_LAYER_BUTTONS = 10;
+
+/** Marks the layer row, so it can be filled after the map has rendered. */
+export const LAYER_ROW_CLASS = 'lcars-nav-layers';
 
 /** Actions the console offers beside page selection. */
 const CONSOLE_ACTIONS: { id: string; label: string; tone: string; action: string }[] = [
@@ -94,6 +110,8 @@ export function buildNavConsole(ctx: ChromeContext): HTMLElement {
   cap.appendChild(el('span', 'lcars-nav-cap-code', code('console')));
   console_.appendChild(cap);
 
+  // Rows are added in order; the stack sizes itself to however many there are,
+  // so a build with no map layers is two rows rather than two and a gap.
   const stack = el('div', 'lcars-nav-stack');
 
   const pages = el('nav', 'lcars-nav-row lcars-nav-pages');
@@ -105,6 +123,14 @@ export function buildNavConsole(ctx: ChromeContext): HTMLElement {
     pages.appendChild(btn);
   }
   stack.appendChild(pages);
+
+  // Built EMPTY. The map renders its layer controls long after chrome mounts —
+  // measured at four seconds against nine hundred milliseconds — so reading
+  // them here returns nothing. `syncNavLayers` fills the row once they exist.
+  const layerRow = el('div', `lcars-nav-row ${LAYER_ROW_CLASS}`);
+  layerRow.setAttribute('aria-label', 'Map layers');
+  layerRow.hidden = true;
+  stack.appendChild(layerRow);
 
   const actions = el('div', 'lcars-nav-row lcars-nav-actions');
   for (const item of CONSOLE_ACTIONS) {
@@ -133,6 +159,53 @@ export function buildNavConsole(ctx: ChromeContext): HTMLElement {
   console_.appendChild(status);
 
   return console_;
+}
+
+/**
+ * Fills the layer row from the controls the map has actually rendered.
+ *
+ * Idempotent and cheap: it compares the keys it would render against the ones
+ * already there and returns untouched when they agree, so it is safe to call
+ * from a poll.
+ *
+ * Reading the real `data-layer` values rather than keeping a list here is the
+ * same rule as a rail button naming a real panel — a button for a layer the
+ * map does not have would silently do nothing, and on a wall panel that is
+ * indistinguishable from a broken display.
+ *
+ * Returns true once the row has been populated.
+ */
+export function syncNavLayers(doc: Document = document): boolean {
+  const row = doc.querySelector<HTMLElement>(`.${LAYER_ROW_CLASS}`);
+  if (!row) return false;
+
+  const keys = layerKeys(doc).slice(0, MAX_LAYER_BUTTONS);
+  if (!keys.length) return false;
+
+  const rendered = [...row.querySelectorAll<HTMLElement>('[data-wm-action]')].map((btn) =>
+    (btn.dataset.wmAction ?? '').replace('map.layer:', ''),
+  );
+  if (rendered.length === keys.length && rendered.every((k, i) => k === keys[i])) return true;
+
+  row.textContent = '';
+  const tones = ['periwinkle', 'ice', 'lilac', 'cream', 'tan'];
+  keys.forEach((key, index) => {
+    const btn = button(
+      `layer-${key}`,
+      key.replace(/[-_]/g, ' '),
+      tones[index % tones.length] ?? 'tan',
+      `map.layer:${key}`,
+      // Dispatched on the global action bus rather than through a captured
+      // chrome context: this runs long after the mount that built the row,
+      // and holding the context alive just to reach `dispatch` would keep a
+      // whole torn-down chrome in memory.
+      { dispatch: (action: string) => dispatchAction(action) } as ChromeContext,
+    );
+    btn.classList.add('lcars-nav-btn-compact');
+    row.appendChild(btn);
+  });
+  row.hidden = false;
+  return true;
 }
 
 /** Lights the button for the active page. Called on every page change. */

@@ -175,6 +175,160 @@ test.describe('1U navigation console — 1424x280', () => {
   });
 });
 
+test.describe('the console tells the truth about state', () => {
+  test('the active page stays lit through upstream re-mounts', async ({ page }) => {
+    // Measured before the fix: OPS lit at 924ms and was dark again by 990ms.
+    // Upstream rebuilds the dashboard by assigning `innerHTML`, the shell
+    // observer re-mounts the chrome, and the fresh buttons came back unlit
+    // because the only hook was a theme change — and a re-mount is not one.
+    await load(page, 'nav', NAV);
+    // Well past the rebuild that used to eat it.
+    await page.waitForTimeout(6_000);
+
+    const lit = await page.$$eval('[data-wm-page-btn].is-active', (els) =>
+      els.map((el) => el.getAttribute('data-wm-page-btn')),
+    );
+    expect(lit, 'the console is not showing which page is up').toHaveLength(1);
+  });
+
+  test('an alert is visible on the console, not just the dashboard', async ({ page }) => {
+    // The console has no elbow, stub, foot or rail button, so every selector
+    // the alert state painted missed it entirely: `data-wm-alert` was set and
+    // nothing changed. That is the worse half of the failure — the console is
+    // at hand height and is the panel being looked at.
+    await load(page, 'nav', NAV);
+
+    const animation = () =>
+      page.$eval('.lcars-nav-cap', (el) => getComputedStyle(el).animationName);
+
+    expect(await animation()).toBe('none');
+    await page.evaluate(async () => {
+      const { setAlert } = await import('/src/alert/index.ts');
+      setAlert(true);
+    });
+    expect(await animation(), 'the console stayed calm through an alert').toBe(
+      'wm-lcars-alert-pulse',
+    );
+  });
+
+  test('the page tones are not overwritten by the alert', async ({ page }) => {
+    // They are what make a page identifiable from the doorway. Pulsing five of
+    // them at 1Hz would trade one piece of information for another rather than
+    // adding any.
+    await load(page, 'nav', NAV);
+    await page.evaluate(async () => {
+      const { setAlert } = await import('/src/alert/index.ts');
+      setAlert(true);
+    });
+
+    const pulsing = await page.$$eval('[data-wm-page-btn]', (els) =>
+      els.filter((el) => getComputedStyle(el).animationName !== 'none').length,
+    );
+    expect(pulsing).toBe(0);
+  });
+
+  test('no surface warns that it is off-target', async ({ page }) => {
+    // The theme declared one target while the kiosk has three, so every
+    // correctly configured display logged a warning at boot — which trains the
+    // operator to ignore a console that also carries `doctor` and the
+    // wake-word diagnostics.
+    const warnings: string[] = [];
+    page.on('console', (message) => {
+      // Playwright's type is 'warning', not 'warn'. Matching on the text
+      // alone would also pass if the warning stopped being a warning.
+      if (message.type() === 'warning' && /off-target/.test(message.text())) {
+        warnings.push(message.text());
+      }
+    });
+
+    for (const [surface, size] of [
+      ['dashboard', DASHBOARD],
+      ['nav', NAV],
+      ['panel', { width: 1280, height: 720 }],
+    ] as const) {
+      await load(page, surface, size);
+    }
+
+    expect(warnings).toEqual([]);
+  });
+});
+
+test.describe('the console actually reaches the dashboard', () => {
+  test('map.focus resolves a real element', async ({ page }) => {
+    // It queried `#mapPanel, .map-panel, #map` and upstream renders
+    // `#mapSection`, so it returned false on every surface since P1: the
+    // rail's GLOBE button, the console's, and the voice command all sounded
+    // the refusal tone and moved nothing. It survived because no test asserted
+    // the action SUCCEEDS — only that an unknown one fails.
+    await load(page, 'dashboard', DASHBOARD);
+
+    const handled = await page.evaluate(async () => {
+      const { getActionRouter } = await import('/src/themes/index.ts');
+      return getActionRouter()?.handle('map.focus') ?? null;
+    });
+
+    expect(handled, 'map.focus is a no-op again').toBe(true);
+  });
+
+  test('a layer touched on the console toggles it on the dashboard', async ({ browser }) => {
+    // The console is a control surface for a DIFFERENT window, so an action
+    // run locally acts on its own parked copy and does nothing anyone can see.
+    const context = await browser.newContext();
+
+    const nav = await context.newPage();
+    await load(nav, 'nav', NAV);
+    const dash = await context.newPage();
+    await load(dash, 'dashboard', DASHBOARD);
+    // The map renders its layer controls seconds after chrome mounts.
+    await nav.waitForTimeout(9_000);
+
+    const key = await dash.$$eval('.layer-toggle[data-layer]', (els) => {
+      const usable = els.find((el) => !(el as HTMLButtonElement).disabled);
+      return usable?.getAttribute('data-layer') ?? null;
+    });
+    expect(key, 'no enabled layer to exercise').not.toBeNull();
+
+    await dash.evaluate((layer) => {
+      (window as unknown as { __clicks: number }).__clicks = 0;
+      document
+        .querySelector(`.layer-toggle[data-layer="${layer}"]`)
+        ?.addEventListener('click', () => {
+          (window as unknown as { __clicks: number }).__clicks += 1;
+        });
+    }, key);
+
+    await nav.evaluate((layer) => {
+      const btn = [...document.querySelectorAll<HTMLElement>('.lcars-nav-layers .lcars-nav-btn')]
+        .find((el) => el.dataset.wmAction === `map.layer:${layer}`);
+      btn?.click();
+    }, key);
+
+    await expect
+      .poll(
+        () => dash.evaluate(() => (window as unknown as { __clicks: number }).__clicks),
+        { timeout: 5_000 },
+      )
+      .toBeGreaterThan(0);
+
+    await context.close();
+  });
+
+  test('the console offers only layers the map actually rendered', async ({ page }) => {
+    // Same rule as a rail button naming a real panel: a button for a layer the
+    // map does not have would silently do nothing.
+    await load(page, 'nav', NAV);
+    await page.waitForTimeout(9_000);
+
+    const mismatched = await page.$$eval('.lcars-nav-layers .lcars-nav-btn', (btns) =>
+      btns
+        .map((b) => (b as HTMLElement).dataset.wmAction?.replace('map.layer:', '') ?? '')
+        .filter((key) => !document.querySelector(`.layer-toggle[data-layer="${key}"]`)),
+    );
+
+    expect(mismatched).toEqual([]);
+  });
+});
+
 test.describe('the two displays together', () => {
   test('a page selected on the console reaches the dashboard', async ({ browser }) => {
     // The whole point of the split. Same origin, same profile, so the two
@@ -310,8 +464,12 @@ test.describe('upstream chrome the kiosk does not want', () => {
     // The legend is NOT a control. It is the key to reading the colours, so
     // removing it in the name of making the map more readable would be
     // exactly backwards.
-    const { legend } = await heights(page);
-    expect(legend, 'the legend was swept up with the controls').toBeGreaterThan(0);
+    //
+    // Polled: the map draws its legend well after the shell is ready, so
+    // asserting immediately races the render rather than testing anything.
+    await expect
+      .poll(async () => (await heights(page)).legend, { timeout: 15_000 })
+      .toBeGreaterThan(0);
   });
 
   test('the 1280x720 fallback keeps its map controls', async ({ page }) => {

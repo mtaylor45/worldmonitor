@@ -399,6 +399,47 @@ keep.** `a11y-landmarks-tablist` and `a11y-axe-scan` both load `/` with no
 theme pinned, so they run on `default`, where upstream's header and its
 `banner` landmark are exactly where upstream put them.
 
+**The console is a control surface for a different window, so its actions are
+forwarded, not run.** A different window is a different DOM: an action run on
+the console acts on its own parked copy of the dashboard and does nothing
+anyone can see. That is not hypothetical — it is what the GLOBE button did.
+`ActionDefinition.target` says where an action belongs (`local`, `dashboard`,
+`both`) and `installActions` does the forwarding once, so an action cannot be
+added that quietly forgets to. The dashboard performs what arrives through the
+SAME registry a button press uses, and has no remote port of its own, so the
+two cannot volley.
+
+`theme.*` is `both`: the theme is per-window state, so a console that cycled
+only its own would leave the displays wearing different skins — and one cycled
+to `default` would lose its chrome with no way back.
+
+**Anything applied ON TOP of chrome must be re-applied on `CHROME_MOUNT_EVENT`,
+not `THEME_CHANGE_EVENT`.** Upstream rebuilds the dashboard by assigning
+`innerHTML`, the shell observer silently re-mounts, and a re-mount is not a
+theme change. Measured before this existed: the console lit its page button at
+924ms and was dark again by 990ms.
+
+**The alert state must name elements that exist on the surface it is meant to
+paint.** The original rules listed the dashboard's elbow, stub, foot and rail
+button, none of which the console has, so `data-wm-alert` was set on it and
+nothing changed at all. The page buttons deliberately stay out of the pulse:
+they carry the archetype tones, and overwriting five of them at 1Hz trades one
+piece of information for another rather than adding any.
+
+**The console's layer row is filled after the fact, and from the real
+controls.** The map renders its layer toggles seconds after chrome mounts, so
+reading them at build time returns nothing; `syncNavLayers` is polled until it
+succeeds and then stops. The keys come from upstream's own `data-layer`
+attributes, so a button can never name a layer the map does not have — and a
+layer upstream has disabled because the map is at its limit returns false, so
+the refusal tone sounds rather than the console appearing to accept a command
+the map will ignore.
+
+**Every surface the theme is laid out for is declared in `targets`.** The
+off-target warning exists to catch a display nobody tuned for; one that fires
+on a correctly configured kiosk trains the operator to ignore the console,
+which is also where `doctor` and the wake-word diagnostics report.
+
 ---
 
 ## Pages

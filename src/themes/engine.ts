@@ -19,6 +19,7 @@
 
 import {
   ACTION_EVENT,
+  CHROME_MOUNT_EVENT,
   THEME_CHANGE_EVENT,
   type ActionDetail,
   type ChromeContext,
@@ -304,6 +305,12 @@ export class ThemeEngine {
       this.mountPanels(theme);
       this.watchPanels(theme);
     }
+
+    // Announced on every mount, so state applied ON TOP of chrome can be
+    // re-applied after a re-mount. Deliberately fired even when a slot failed
+    // above: some chrome is on screen, and a listener that decorates whatever
+    // is there is better off running than being skipped.
+    this.doc.dispatchEvent(new CustomEvent(CHROME_MOUNT_EVENT, { detail: { theme: theme.id } }));
   }
 
   private mountPanels(theme: Theme): void {

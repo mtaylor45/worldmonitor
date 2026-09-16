@@ -12,6 +12,7 @@ import {
   installActions,
   type ActionRouter,
   type PagePort,
+  type RemotePort,
   type VoicePort,
 } from './actions';
 import { createSoundPlayer, type SoundPlayer } from './sounds';
@@ -30,7 +31,7 @@ export {
   dispatchAction,
   themes,
 } from './engine';
-export { ACTION_EVENT, THEME_CHANGE_EVENT } from './types';
+export { ACTION_EVENT, CHROME_MOUNT_EVENT, THEME_CHANGE_EVENT } from './types';
 export type { ThemeSoundSlot } from './types';
 export type { VoicePort } from './actions';
 export {
@@ -99,7 +100,7 @@ function themeFromUrl(): string | null {
  * the sake of its colour scheme.
  */
 export function bootThemes(
-  options: { voice?: VoicePort; pages?: PagePort } = {},
+  options: { voice?: VoicePort; pages?: PagePort; remote?: RemotePort } = {},
 ): Promise<void> {
   if (booted) return Promise.resolve();
   booted = true;
@@ -131,6 +132,7 @@ export function bootThemes(
         if (!handled) return sounds?.play('deny');
         sounds?.play(action.startsWith('theme.') ? 'change' : 'accept');
       },
+      options.remote,
     );
 
     const pinned = themeFromUrl();

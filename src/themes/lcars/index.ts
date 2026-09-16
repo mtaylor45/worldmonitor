@@ -19,8 +19,19 @@ const SOUNDS = {
   alert: '/sounds/panel_beep_08.ogg',
 } as const;
 
-/** The kiosk panel this theme is laid out for (SCOPE.md §2). */
-const KIOSK_TARGET = { width: 1280, height: 720, label: '9in kiosk' } as const;
+/**
+ * Every panel this theme is laid out for (SCOPE.md §2).
+ *
+ * All three, not just the original: the off-target warning exists to catch a
+ * display nobody tuned for, and one that fires on a correctly configured
+ * kiosk trains the operator to ignore the console — which is also where
+ * `doctor` and the wake-word diagnostics report.
+ */
+const KIOSK_TARGETS = [
+  { width: 1280, height: 400, label: '2U dashboard' },
+  { width: 1424, height: 280, label: '1U console' },
+  { width: 1280, height: 720, label: '9in single-display fallback' },
+] as const;
 
 export function createLcarsTheme(palette: LcarsPalette): Theme {
   const drexler = palette === 'drexler';
@@ -33,7 +44,7 @@ export function createLcarsTheme(palette: LcarsPalette): Theme {
     tokens: lcarsTokens(palette),
     stylesheet: () => import('./lcars.css?url'),
     chrome: lcarsChrome,
-    targets: [KIOSK_TARGET],
+    targets: [...KIOSK_TARGETS],
     sounds: SOUNDS,
   };
 }

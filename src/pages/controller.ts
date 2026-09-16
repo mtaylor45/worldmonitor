@@ -56,9 +56,18 @@ export function startPages(options: PageOptions = {}): PageController {
   const bus = options.bus ?? openBus({ win });
   const surface = currentSurface(doc);
 
-  // The console renders no panels, so it must not hide any: `showPage` there
-  // would find the parked dashboard and filter it for nothing.
-  const filters = surface !== 'nav';
+  // ONLY the 2U dashboard filters.
+  //
+  // The console renders no panels of its own — `showPage` there would find the
+  // parked copy and filter it for nothing.
+  //
+  // The 1280x720 `panel` surface deliberately does not filter either. It has
+  // no page controls, since the rail carries panel shortcuts rather than
+  // pages, so filtering would strand it on the first page with no way off;
+  // and it is the layout whose whole job is showing the twelve-column grid,
+  // which is why the P1 acceptance test measures every panel's span there.
+  // Pages exist because a 400px display cannot show the grid. A 720px one can.
+  const filters = surface === 'dashboard';
 
   let active = lastKnownPage(win) ?? PAGES[0]?.id ?? '';
   let observer: MutationObserver | null = null;

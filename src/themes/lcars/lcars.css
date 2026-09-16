@@ -496,6 +496,34 @@
   animation: wm-lcars-alert-pulse 1s steps(1, end) infinite;
 }
 
+/* THE CONSOLE ALERTS TOO.
+
+   The rules above name the dashboard's frame pieces — elbow, stub, foot, rail
+   button — and the navigation console has none of them. It has a cap and an
+   interrupt tab, so without this the 1U display stays perfectly calm through a
+   red alert: `data-wm-alert` is set on it, and nothing at all changes.
+
+   That is the worse half of the failure, not the lesser one. The console sits
+   at hand height and is the panel being looked at, while the dashboard is the
+   one glanced at across a room.
+
+   The page buttons deliberately do NOT pulse. They carry the archetype tones,
+   which are what make a page identifiable from the doorway, and overwriting
+   five of them at 1Hz would trade one piece of information for another rather
+   than adding any. The cap is the frame, and the frame is what alerts. */
+
+:root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-nav-cap,
+:root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-nav .lcars-interrupt {
+  animation: wm-lcars-alert-pulse 1s steps(1, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-nav-cap,
+  :root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-nav .lcars-interrupt {
+    background: var(--wm-color-critical);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-elbow,
   :root[data-wm-theme^="lcars"][data-wm-alert='true'] .lcars-stub,
@@ -669,9 +697,13 @@
   opacity: 0.75;
 }
 
+/* `auto-flow: row` with equal tracks, rather than a fixed count: the layer row
+   is only built when upstream rendered layer controls, and a hardcoded `1fr
+   1fr 1fr` would leave an empty band on a build without them. */
 .lcars-nav-stack {
   display: grid;
-  grid-template-rows: 1fr 1fr;
+  grid-auto-flow: row;
+  grid-auto-rows: minmax(0, 1fr);
   gap: var(--wm-space-gutter);
   min-height: 0;
   min-width: 0;
@@ -705,9 +737,13 @@
   grid-template-columns: auto 1fr;
   align-items: end;
   gap: var(--wm-space-gutter);
-  /* Well past the 44px touch floor: this is touched at arm's length by
-     someone not looking closely, on a panel with no cursor to aim with. */
-  min-height: 96px;
+  /* Comfortably past the 44px touch floor — this is touched at arm's length
+     by someone not looking closely, on a panel with no cursor to aim with —
+     but low enough that THREE rows still fit 280px. At 96px they did not:
+     three tracks plus gutters and frame padding overran the strip by 4px, and
+     a `1fr` track cannot shrink below a child's `min-height`. The rows stretch
+     to fill whatever is left, so a two-row console still gets ~132px each. */
+  min-height: 72px;
   padding: var(--wm-space-block);
   border: 0;
   border-radius: var(--wm-radius-block);
@@ -775,6 +811,29 @@
 /* Voice takes the column and the transcript sits under it only when there is
    one: `auto` on an element that is `hidden` collapses to nothing, so the tag
    fills the strip at rest instead of floating above a black void. */
+/* Layer names are single words and there are ten of them, so they take a
+   smaller type size and a shorter block than a page button. Still 44px+ in
+   both axes — the floor is a floor, not a target. */
+.lcars-nav-btn-compact {
+  min-height: 44px;
+  grid-template-columns: 1fr;
+  align-items: center;
+  justify-items: center;
+  padding: 4px;
+}
+
+.lcars-nav-btn-compact .lcars-nav-code {
+  display: none;
+}
+
+.lcars-nav-btn-compact .lcars-nav-label {
+  justify-self: center;
+  font-size: var(--wm-font-size-label);
+  text-align: center;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
 .lcars-nav-status {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;

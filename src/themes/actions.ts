@@ -47,8 +47,33 @@ export interface ActionDefinition {
    * means always available.
    */
   available?(): boolean;
+  /**
+   * Which document this action has to run against.
+   *
+   * `local`      — this window. Voice, theme tokens, anything self-contained.
+   * `dashboard`  — the window showing the panels. On the navigation console
+   *                that is a DIFFERENT window, so running it here would act on
+   *                the console's own parked copy and do nothing anyone can
+   *                see. Forwarded over the surface bus instead.
+   * `both`       — run here AND forward. The theme is per-window state, so a
+   *                console that cycled only its own would leave the two
+   *                displays wearing different skins, and a console cycled to
+   *                `default` would lose its chrome with no way back.
+   *
+   * Defaults to `local`.
+   */
+  target?: 'local' | 'dashboard' | 'both';
   /** Returns false when the action could not be carried out. */
   run(argument: string | undefined): boolean;
+}
+
+/**
+ * Sends an action to the other display. Returns false when nothing could be
+ * sent, so the caller still plays the refusal tone rather than implying a
+ * command reached a panel it never left this one for.
+ */
+export interface RemotePort {
+  dispatch(action: string, argument: string | undefined): boolean;
 }
 
 /** Every panel host upstream has rendered, keyed by its `data-panel` value. */
@@ -91,9 +116,57 @@ function focusPanel(key: string | undefined, doc: Document = document): boolean 
   return true;
 }
 
+/** Every map layer upstream has rendered a toggle for, by `data-layer`. */
+export function layerKeys(doc: Document = document): string[] {
+  return [...doc.querySelectorAll<HTMLElement>('.layer-toggle[data-layer]')]
+    .map((el) => el.getAttribute('data-layer') ?? '')
+    .filter(Boolean);
+}
+
+/**
+ * Toggles a map layer by clicking upstream's own control.
+ *
+ * Driving the real control rather than reaching into the map's state: upstream
+ * owns what a layer means, what it conflicts with and what it costs to draw,
+ * and a second path into that is a second thing to keep correct. A key with no
+ * control returns false, so the console's refusal tone sounds instead of the
+ * command silently doing nothing.
+ */
+function toggleLayer(key: string | undefined, doc: Document = document): boolean {
+  if (!key) return false;
+  const control = doc.querySelector<HTMLElement>(
+    `.layer-toggle[data-layer="${CSS.escape(key)}"]`,
+  );
+  if (!control) return false;
+
+  // Two shapes exist. The plain map renders the toggle AS a button; the
+  // DeckGL variant renders a label wrapping a checkbox. Clicking a label
+  // whose input is elsewhere in the shadow of a stylesheet is unreliable, so
+  // the input wins when there is one.
+  const target = control.querySelector<HTMLElement>('input') ?? control;
+
+  // Upstream caps how many layers may be lit at once and disables the rest.
+  // Returning false here is what makes the console sound its refusal tone
+  // instead of appearing to accept a command the map will ignore — the map is
+  // at its limit, and that is worth hearing.
+  if (target instanceof HTMLButtonElement || target instanceof HTMLInputElement) {
+    if (target.disabled) return false;
+  }
+
+  target.click();
+  return true;
+}
+
 /** Scrolls the map into view. The map lives outside the panel grid. */
 function focusMap(doc: Document = document): boolean {
-  const map = doc.querySelector<HTMLElement>('#mapPanel, .map-panel, #map');
+  // `#mapSection` FIRST, and it is the one that actually matches: upstream
+  // renders the map as `<div class="map-section" id="mapSection">`. The three
+  // that follow matched nothing, which made `map.focus` return false on every
+  // surface since P1 — the rail's GLOBE button, the console's, and the voice
+  // command all sounded the refusal tone and moved nothing. Exactly the
+  // failure the rail rules warn about, on the map rather than a panel, and it
+  // survived because no test asserted the action SUCCEEDS.
+  const map = doc.querySelector<HTMLElement>('#mapSection, #mapPanel, .map-panel, #map');
   if (!map) return false;
   map.scrollIntoView({ block: 'nearest', behavior: 'instant' });
   return true;
@@ -146,6 +219,7 @@ export function createActions(
         description: 'Panel key, e.g. "cii" for Country Instability.',
         enumerate: () => panelKeys(),
       },
+      target: 'dashboard',
       run: (arg) => {
         // A panel on another page is not reachable by scrolling. Without this
         // the command would silently do nothing, which on a wall display is
@@ -161,11 +235,24 @@ export function createActions(
     {
       action: 'map.focus',
       summary: 'Bring the world map into view.',
+      target: 'dashboard',
       run: () => focusMap(),
+    },
+    {
+      action: 'map.layer',
+      summary: 'Toggle a data layer on the world map.',
+      argument: {
+        name: 'layer',
+        description: 'Layer key, e.g. "conflicts", "protests", "nuclear".',
+        enumerate: () => layerKeys(),
+      },
+      target: 'dashboard',
+      run: (arg) => toggleLayer(arg),
     },
     {
       action: 'theme.set',
       summary: 'Switch to a named theme.',
+      target: 'both',
       argument: {
         name: 'theme',
         description: 'Theme id.',
@@ -180,6 +267,7 @@ export function createActions(
     {
       action: 'theme.cycle',
       summary: 'Advance to the next registered theme.',
+      target: 'both',
       run: () => {
         theme.cycle();
         return true;
@@ -250,6 +338,7 @@ export interface ActionRouter {
 export function installActions(
   actions: ActionDefinition[],
   onResult?: (action: string, handled: boolean) => void,
+  remote?: RemotePort,
 ): ActionRouter {
   // Filtered here rather than at dispatch: an unavailable action must not
   // appear in `actionNames()` or `toolSchema()` either, and those read this
@@ -265,12 +354,23 @@ export function installActions(
       return false;
     }
     const argument = parsed.argument ?? (typeof payload === 'string' ? payload : undefined);
+    const target = definition.target ?? 'local';
+
+    // Forwarding is done HERE rather than inside each `run`, so an action
+    // cannot be added that quietly forgets to. Without a remote port - which
+    // is every window except the console - `dashboard` simply means local,
+    // because this window IS the dashboard.
+    const forwards = Boolean(remote) && target !== 'local';
+    const runsLocally = !remote || target !== 'dashboard';
+
     let handled = false;
-    try {
-      handled = definition.run(argument);
-    } catch {
-      // An action that throws is a failed action, not a broken dashboard.
-      handled = false;
+    if (forwards) handled = remote!.dispatch(parsed.action, argument);
+    if (runsLocally) {
+      try {
+        handled = definition.run(argument) || handled;
+      } catch {
+        // An action that throws is a failed action, not a broken dashboard.
+      }
     }
     onResult?.(parsed.action, handled);
     return handled;

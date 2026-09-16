@@ -47,13 +47,42 @@ const FALLBACK_KEY = 'wm-surface-bus';
 const NAV_MAX_HEIGHT = 320;
 const DASHBOARD_MAX_HEIGHT = 520;
 
-export interface SurfaceMessage {
-  /** The page both displays should be showing. */
+/** The page both displays should be showing. */
+export interface SurfacePageMessage {
   type: 'page';
   id: string;
   /** Set by the sender so a window ignores its own echo. */
   from: string;
 }
+
+/**
+ * An action the OTHER display should perform.
+ *
+ * The console is a control surface for a dashboard in a different window, and
+ * a different window is a different DOM. Every action that manipulates the
+ * dashboard — focusing a panel, focusing the map, toggling a map layer — would
+ * otherwise run against the console's own parked copy and do nothing anyone
+ * can see. That is not hypothetical: it is what the GLOBE button did.
+ */
+export interface SurfaceActionMessage {
+  type: 'action';
+  action: string;
+  argument?: string;
+  from: string;
+}
+
+export type SurfaceMessage = SurfacePageMessage | SurfaceActionMessage;
+
+/**
+ * A message as a caller writes it — the sender stamps `from` itself.
+ *
+ * Spelled as a union of Omits rather than `Omit<SurfaceMessage, 'from'>`,
+ * because `Omit` collapses a union into one object with the shared keys, which
+ * would accept a page id on an action and reject a valid one.
+ */
+export type OutgoingMessage =
+  | Omit<SurfacePageMessage, 'from'>
+  | Omit<SurfaceActionMessage, 'from'>;
 
 function isSurface(value: unknown): value is Surface {
   return typeof value === 'string' && (SURFACES as readonly string[]).includes(value);
@@ -92,7 +121,7 @@ export function currentSurface(doc: Document = document): Surface {
 
 export interface SurfaceBus {
   /** Tells the other display. Returns false when nothing could be sent. */
-  post(message: Omit<SurfaceMessage, 'from'>): boolean;
+  post(message: OutgoingMessage): boolean;
   /** Registers a listener. Returns its own teardown. */
   subscribe(handler: (message: SurfaceMessage) => void): () => void;
   close(): void;
@@ -176,7 +205,7 @@ export function openBus(options: BusOptions = {}): SurfaceBus {
     id,
 
     post(message) {
-      const full: SurfaceMessage = { ...message, from: id };
+      const full = { ...message, from: id } as SurfaceMessage;
       let sent = false;
       try {
         channel?.postMessage(full);
@@ -185,11 +214,14 @@ export function openBus(options: BusOptions = {}): SurfaceBus {
         report(error);
       }
       try {
-        // Written on both paths, not just the fallback: it doubles as the
-        // last-known page for a display that boots after its sibling, which
-        // is the normal case when one panel powers on first.
-        win.localStorage?.setItem(FALLBACK_KEY, JSON.stringify(full));
-        sent = true;
+        // PAGE messages only. The write doubles as the last-known page for a
+        // display that boots after its sibling, which is the normal case when
+        // one panel powers on first — and an action is a one-shot instruction,
+        // so persisting one would have it replayed at every later boot.
+        if (full.type === 'page') {
+          win.localStorage?.setItem(FALLBACK_KEY, JSON.stringify(full));
+          sent = true;
+        }
       } catch {
         // Private mode, blocked storage. The channel may still have carried it.
       }
@@ -228,7 +260,7 @@ export function lastKnownPage(win: Window = window): string | null {
     const raw = win.localStorage?.getItem(FALLBACK_KEY);
     if (!raw) return null;
     const message = parse(JSON.parse(raw));
-    return message?.id ?? null;
+    return message?.type === 'page' ? message.id : null;
   } catch {
     return null;
   }
@@ -237,9 +269,25 @@ export function lastKnownPage(win: Window = window): string | null {
 function parse(raw: unknown): SurfaceMessage | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const value = raw as Record<string, unknown>;
-  if (value.type !== 'page') return null;
-  if (typeof value.id !== 'string' || !value.id) return null;
-  return { type: 'page', id: value.id, from: String(value.from ?? '') };
+  const from = String(value.from ?? '');
+
+  if (value.type === 'page') {
+    return typeof value.id === 'string' && value.id
+      ? { type: 'page', id: value.id, from }
+      : null;
+  }
+
+  if (value.type === 'action') {
+    if (typeof value.action !== 'string' || !value.action) return null;
+    return {
+      type: 'action',
+      action: value.action,
+      ...(typeof value.argument === 'string' ? { argument: value.argument } : {}),
+      from,
+    };
+  }
+
+  return null;
 }
 
 function report(error: unknown): void {

@@ -11,13 +11,13 @@
  * keeps it that way as more subsystems arrive (P3 adds `src/context/`).
  */
 
-import { THEME_CHANGE_EVENT, bootThemes, getActionRouter } from './themes';
+import { CHROME_MOUNT_EVENT, bootThemes, getActionRouter } from './themes';
 import { startContextPublisher } from './context';
 import { bootVoice } from './voice';
-import { applySurface, currentSurface, detectSurface } from './surface';
+import { applySurface, currentSurface, detectSurface, openBus } from './surface';
 import { startPages } from './pages/controller';
 import { PAGES } from './pages';
-import { markActivePage, markAvailablePages } from './themes/lcars/nav';
+import { markActivePage, markAvailablePages, syncNavLayers } from './themes/lcars/nav';
 
 let booted = false;
 
@@ -57,28 +57,65 @@ export function bootApp(): Promise<void> {
         getActionRouter()?.handle(action, argument) ?? false,
     });
 
+    // One bus for both displays, shared by the page controller and the remote
+    // action port below. Opening two would work but would have each window
+    // ignoring only its own echo per-bus, so a message from bus A would look
+    // foreign to bus B in the same window and be acted on twice.
+    const bus = openBus();
+    const surface = currentSurface();
+
     // Pages before themes, so `page.set` is already in the registry that the
     // console's buttons dispatch through.
     const pages = startPages({
+      bus,
       onChange: (id, available) => {
         markActivePage(id);
         markAvailablePages(available);
       },
     });
 
-    // The controller runs its first pass before any chrome exists, so the
-    // console has no buttons to light yet — and a theme cycle rebuilds them,
-    // losing the lit one. `THEME_CHANGE_EVENT` fires after the chrome mounts
-    // on both paths, which makes it the one hook that covers boot and every
-    // switch afterwards. Re-applied without broadcasting: nothing about the
-    // shared page actually changed, and telling the other display otherwise
-    // would make a theme cycle on one panel look like a navigation on both.
-    document.addEventListener(THEME_CHANGE_EVENT, () => {
+    // The lit page button lives ON the chrome, so it dies with every re-mount —
+    // and upstream re-mounts constantly, rebuilding the dashboard by assigning
+    // `innerHTML`. Measured: the console lit OPS at 924ms and was dark again by
+    // 990ms, because the only hook was a theme change and a re-mount is not
+    // one. `CHROME_MOUNT_EVENT` fires on every mount, which is what this needs.
+    //
+    // Re-applied without broadcasting: nothing about the shared page actually
+    // changed, and telling the other display otherwise would make a repaint on
+    // one panel look like a navigation on both.
+    document.addEventListener(CHROME_MOUNT_EVENT, () => {
       pages.set(pages.current(), { broadcast: false });
+      if (surface === 'nav') syncNavLayers();
     });
+
+    // The map renders its layer controls seconds after chrome mounts, so the
+    // console's layer row is empty at build time and there is no event to say
+    // when it stops being. Polled rather than observed: a subtree observer on
+    // a dashboard that repaints several times a second costs far more than
+    // eleven cheap checks, and the layer set is fixed once the map has drawn —
+    // so this stops the moment it succeeds, and gives up rather than polling a
+    // build that has no map at all.
+    if (surface === 'nav') {
+      let attempts = 0;
+      const poll = window.setInterval(() => {
+        if (syncNavLayers() || (attempts += 1) > 10) window.clearInterval(poll);
+      }, 1_500);
+    }
 
     const themes = bootThemes({
       voice,
+
+      // Only the console forwards. Everywhere else this window IS the
+      // dashboard, so `target: 'dashboard'` means "run it here" and a remote
+      // port would send the action to a display that does not exist.
+      ...(surface === 'nav'
+        ? {
+            remote: {
+              dispatch: (action: string, argument: string | undefined) =>
+                bus.post({ type: 'action', action, ...(argument ? { argument } : {}) }),
+            },
+          }
+        : {}),
       pages: {
         set: (id) => pages.set(id),
         next: () => pages.next(),
@@ -88,10 +125,22 @@ export function bootApp(): Promise<void> {
       },
     });
 
+    // The dashboard performs what the console asked for. Routed through the
+    // SAME registry a local dispatch uses, so an action arriving over the bus
+    // gets exactly the checks a button press does — and the dashboard has no
+    // remote port of its own, so nothing is forwarded back and the two cannot
+    // volley.
+    if (surface !== 'nav') {
+      bus.subscribe((message) => {
+        if (message.type !== 'action') return;
+        getActionRouter()?.handle(message.action, message.argument);
+      });
+    }
+
     // The console shows no data, so it publishes no snapshot: the model would
     // be told the dashboard has no panels, which is true of this window and
     // false of the system. The dashboard window publishes for both.
-    if (currentSurface() === 'nav') return themes;
+    if (surface === 'nav') return themes;
 
     // The model reads this snapshot and never the DOM (SCOPE.md §3).
     startContextPublisher({

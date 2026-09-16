@@ -117,6 +117,18 @@ export interface ThemeChangeDetail {
 
 export const THEME_CHANGE_EVENT = 'wm:theme-change';
 
+/**
+ * Fired after chrome mounts, on every mount — including the silent re-mounts
+ * the shell observer performs when upstream rebuilds the dashboard by
+ * assigning `innerHTML`.
+ *
+ * `THEME_CHANGE_EVENT` is not a substitute. A re-mount is not a theme change,
+ * and anything that decorates chrome after the fact — the lit page button on
+ * the navigation console, for one — is silently lost on every rebuild if it
+ * only listens for the theme to change.
+ */
+export const CHROME_MOUNT_EVENT = 'wm:chrome-mount';
+
 /** The bus rail buttons and the P3 voice layer both dispatch on. */
 export const ACTION_EVENT = 'wm:action';
 
