@@ -440,6 +440,34 @@ off-target warning exists to catch a display nobody tuned for; one that fires
 on a correctly configured kiosk trains the operator to ignore the console,
 which is also where `doctor` and the wake-word diagnostics report.
 
+**The console reports state back, not just commands out.** A control that
+cannot say what it controls is half a control, and on a wall panel the missing
+half is the one you read from across a room. The display that owns the map
+reports which layers are lit — on request, after performing a forwarded toggle,
+and when the map changes them itself — because the console's own parked copy
+would say something different, and confidently wrong is worse than blank. The
+console asks on boot, since the two panels start independently and either can
+come up second.
+
+**The live block keeps its colour and the row dims around it.** Recolouring the
+selected button was the obvious approach and was wrong twice over: every colour
+bright enough to read as "lit" is already one of the five structural tones, so
+OPS-when-selected rendered identical to ENGINEERING at rest — and overwriting
+the tone destroys the archetype information that makes a page identifiable from
+the doorway. Dimming costs no token, survives a palette swap, and says the same
+thing for pages and layers, so the console has one idea to learn. Three levels,
+darkest last: live, not-current, unavailable.
+
+**Layers do not dim until the dashboard has reported.** Dimming them before
+would state "all off"; blank merely states "not yet told".
+
+**Congestion is relieved with fewer blocks and a smaller type step, never with
+borders.** "The gutter is the separation. No borders or shadows on a block" is
+the rule, and a border was the obvious fix. Ten layer buttons fit at 97px and
+fitting is not reading, so the row shows six at ~170px; the console redefines
+`--wm-font-size-title` to the `head` step so a label sits in its block rather
+than filling it. There is a test asserting no block has a border or a shadow.
+
 ---
 
 ## Pages

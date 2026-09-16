@@ -36,6 +36,8 @@ were hiding, so each is pinned by a test.
 | `.header` | Upstream's site navigation. 40px, and nothing on it is reachable without a pointer | `e2e/two-display.spec.ts` |
 | `.site-footer` | Marketing links and a copyright line. 57px | `e2e/two-display.spec.ts` |
 | `.layer-toggles`, `.time-slider` | Map controls covering 35% of the map. `dashboard` surface only | `e2e/two-display.spec.ts` |
+| `.community-widget` | "Join the Discord Community" pill, faded in on a delay and parked over the console's status column | `e2e/two-display.spec.ts` |
+| `.layer-toggle[data-layer]`, `.active` | READ, and clicked. The console's layer row is built from these and reflects their state | `e2e/two-display.spec.ts` |
 
 `.skip-link` and `.map-legend` are deliberately NOT in this table — the first
 costs no layout and is the only accessible thing in that furniture, the second

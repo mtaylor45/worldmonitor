@@ -329,6 +329,156 @@ test.describe('the console actually reaches the dashboard', () => {
   });
 });
 
+test.describe('the console reports state back, not just commands out', () => {
+  test('layer buttons reflect what the dashboard actually has lit', async ({ browser }) => {
+    // The console forwards a toggle and used to never hear back, so its
+    // buttons were write-only: they changed something and could not say what.
+    const context = await browser.newContext();
+    const dash = await context.newPage();
+    await load(dash, 'dashboard', DASHBOARD);
+    const nav = await context.newPage();
+    await load(nav, 'nav', NAV);
+    await nav.waitForTimeout(11_000);
+
+    const onDashboard = await dash.$$eval('.layer-toggle[data-layer].active', (els) =>
+      els.map((el) => el.getAttribute('data-layer')),
+    );
+    expect(onDashboard.length, 'no lit layers to reflect').toBeGreaterThan(0);
+
+    const onConsole = await nav.$$eval('.lcars-nav-layers .lcars-nav-btn.is-lit', (els) =>
+      els.map((el) => (el as HTMLElement).dataset.wmAction?.replace('map.layer:', '')),
+    );
+
+    // The console shows six of nineteen, so it reflects a SUBSET — every
+    // button it lit must be lit on the dashboard, and none may disagree.
+    expect(onConsole.length).toBeGreaterThan(0);
+    for (const key of onConsole) expect(onDashboard).toContain(key);
+
+    await context.close();
+  });
+
+  test('a toggle from the console updates the console', async ({ browser }) => {
+    // The round trip: console -> dashboard -> report -> console.
+    const context = await browser.newContext();
+    const dash = await context.newPage();
+    await load(dash, 'dashboard', DASHBOARD);
+    const nav = await context.newPage();
+    await load(nav, 'nav', NAV);
+    await nav.waitForTimeout(11_000);
+
+    const key = await nav.$eval('.lcars-nav-layers .lcars-nav-btn.is-lit', (el) =>
+      (el as HTMLElement).dataset.wmAction?.replace('map.layer:', ''),
+    );
+
+    await nav.evaluate((layer) => {
+      [...document.querySelectorAll<HTMLElement>('.lcars-nav-layers .lcars-nav-btn')]
+        .find((el) => el.dataset.wmAction === `map.layer:${layer}`)
+        ?.click();
+    }, key);
+
+    await expect
+      .poll(
+        () =>
+          nav.$eval(
+            `.lcars-nav-layers [data-wm-action="map.layer:${key}"]`,
+            (el) => el.classList.contains('is-lit'),
+          ),
+        { timeout: 8_000 },
+      )
+      .toBe(false);
+
+    await context.close();
+  });
+
+  test('nothing dims until the dashboard has actually said something', async ({ page }) => {
+    // Dimming every button before the first report would state "all off",
+    // which is confidently wrong where blank is merely uninformative.
+    await load(page, 'nav', NAV);
+    const row = page.locator(`.lcars-nav-layers`);
+    await expect(row).not.toHaveClass(/is-reported/);
+  });
+});
+
+test.describe('the console is not congested', () => {
+  test('the row dims around the live block rather than recolouring it', async ({ page }) => {
+    // Recolouring was wrong twice: every colour bright enough to read as "lit"
+    // is already a structural tone, so OPS-when-selected rendered identical to
+    // ENGINEERING at rest — and overwriting the tone destroys the archetype
+    // information that makes a page identifiable from the doorway.
+    await load(page, 'nav', NAV);
+    await page.waitForTimeout(6_000);
+
+    const rows = await page.$$eval('[data-wm-page-btn]', (els) =>
+      els.map((el) => ({
+        active: el.classList.contains('is-active'),
+        opacity: Number.parseFloat(getComputedStyle(el).opacity),
+        background: getComputedStyle(el).backgroundColor,
+      })),
+    );
+
+    const live = rows.filter((r) => r.active);
+    expect(live, 'no live page').toHaveLength(1);
+    expect(live[0]!.opacity).toBe(1);
+    for (const other of rows.filter((r) => !r.active)) {
+      expect(other.opacity, 'the row did not dim around the live block').toBeLessThan(1);
+      // Tone preserved: dimming must not have flattened them to one colour.
+      expect(other.background).not.toBe(live[0]!.background);
+    }
+  });
+
+  test('labels sit inside their blocks rather than filling them', async ({ page }) => {
+    // The congestion complaint. A 44px label in an 87px block leaves 10px of
+    // air; the console drops one real step down the scale to `head`.
+    await load(page, 'nav', NAV);
+    await page.waitForTimeout(9_000);
+
+    const worst = await page.$$eval('.lcars-nav-btn', (els) =>
+      els.reduce((min, el) => {
+        const label = el.querySelector('.lcars-nav-label');
+        if (!label) return min;
+        const b = el.getBoundingClientRect();
+        const t = label.getBoundingClientRect();
+        return Math.min(min, t.left - b.left, b.right - t.right, b.bottom - t.bottom);
+      }, Infinity),
+    );
+
+    expect(worst, 'a label is touching its block edge').toBeGreaterThanOrEqual(8);
+  });
+
+  test('no borders or shadows on a block', async ({ page }) => {
+    // "The gutter is the separation." Adding a border to relieve congestion
+    // would have been the obvious fix and is the one the design system rules
+    // out — the 5px gutter is what carries the look.
+    await load(page, 'nav', NAV);
+    await page.waitForTimeout(6_000);
+
+    const offenders = await page.$$eval('.lcars-nav-btn, .lcars-nav-cap', (els) =>
+      els
+        .map((el) => {
+          const cs = getComputedStyle(el);
+          const bordered = Number.parseFloat(cs.borderTopWidth) > 0;
+          const shadowed = cs.boxShadow !== 'none';
+          return bordered || shadowed ? `${el.className}: ${cs.borderTopWidth} ${cs.boxShadow}` : '';
+        })
+        .filter(Boolean),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  test('the promotional pill does not park on the console', async ({ page }) => {
+    // It fades in after a delay and lands on the status column.
+    await load(page, 'nav', NAV);
+    await page.waitForTimeout(11_000);
+
+    const height = await page.evaluate(() => {
+      const el = document.querySelector('.community-widget');
+      return el ? Math.round(el.getBoundingClientRect().height) : 0;
+    });
+    expect(height).toBe(0);
+  });
+});
+
 test.describe('the two displays together', () => {
   test('a page selected on the console reaches the dashboard', async ({ browser }) => {
     // The whole point of the split. Same origin, same profile, so the two

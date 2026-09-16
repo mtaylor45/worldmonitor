@@ -71,7 +71,38 @@ export interface SurfaceActionMessage {
   from: string;
 }
 
-export type SurfaceMessage = SurfacePageMessage | SurfaceActionMessage;
+/**
+ * Which map layers are currently lit, reported by the display that owns them.
+ *
+ * The console forwards a layer toggle and never hears back, so without this
+ * its buttons are write-only: they change something and cannot say what. A
+ * control that cannot report the state it controls is half a control, and on a
+ * wall panel the half that is missing is the one you read from across a room.
+ */
+export interface SurfaceLayersMessage {
+  type: 'layers';
+  state: Record<string, boolean>;
+  from: string;
+}
+
+/**
+ * Asks the dashboard to report something.
+ *
+ * Needed because the two panels boot independently: a console that comes up
+ * second would otherwise wait for the next change before it knew anything, and
+ * a console that comes up first would miss the dashboard's opening report.
+ */
+export interface SurfaceRequestMessage {
+  type: 'request';
+  what: 'layers';
+  from: string;
+}
+
+export type SurfaceMessage =
+  | SurfacePageMessage
+  | SurfaceActionMessage
+  | SurfaceLayersMessage
+  | SurfaceRequestMessage;
 
 /**
  * A message as a caller writes it — the sender stamps `from` itself.
@@ -82,7 +113,9 @@ export type SurfaceMessage = SurfacePageMessage | SurfaceActionMessage;
  */
 export type OutgoingMessage =
   | Omit<SurfacePageMessage, 'from'>
-  | Omit<SurfaceActionMessage, 'from'>;
+  | Omit<SurfaceActionMessage, 'from'>
+  | Omit<SurfaceLayersMessage, 'from'>
+  | Omit<SurfaceRequestMessage, 'from'>;
 
 function isSurface(value: unknown): value is Surface {
   return typeof value === 'string' && (SURFACES as readonly string[]).includes(value);
@@ -285,6 +318,22 @@ function parse(raw: unknown): SurfaceMessage | null {
       ...(typeof value.argument === 'string' ? { argument: value.argument } : {}),
       from,
     };
+  }
+
+  if (value.type === 'layers') {
+    const raw = value.state;
+    if (typeof raw !== 'object' || raw === null) return null;
+    // Narrowed key by key rather than cast: this crosses a window boundary,
+    // and a stray non-boolean would light a button on nothing.
+    const state: Record<string, boolean> = {};
+    for (const [key, on] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof on === 'boolean') state[key] = on;
+    }
+    return { type: 'layers', state, from };
+  }
+
+  if (value.type === 'request') {
+    return value.what === 'layers' ? { type: 'request', what: 'layers', from } : null;
   }
 
   return null;

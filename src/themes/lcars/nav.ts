@@ -36,13 +36,17 @@ export const PAGE_BUTTON_ATTRIBUTE = 'data-wm-page-btn';
 /**
  * How many map layers the console offers.
  *
- * Upstream renders nineteen. Ten is what fits across the stack at a size that
- * can be hit with a fingertip, and the row keeps a fixed geometry rather than
- * reflowing as layers come and go — a console whose buttons move defeats the
- * muscle memory a wall panel runs on. The remainder stay reachable by voice,
- * which enumerates the full list from the registry.
+ * Upstream renders nineteen. Ten FIT, at 97px each — and fitting is not the
+ * same as reading: ten narrow blocks of small type across a strip is a wall of
+ * colour rather than a row of controls. Six gives each block ~170px, which is
+ * the difference between a label sitting in a block and a label filling one.
+ *
+ * The row keeps a fixed geometry rather than reflowing as layers come and go:
+ * a console whose buttons move defeats the muscle memory a wall panel runs on.
+ * The remaining thirteen stay reachable by voice, which enumerates the full
+ * list from the registry rather than from this row.
  */
-const MAX_LAYER_BUTTONS = 10;
+const MAX_LAYER_BUTTONS = 6;
 
 /** Marks the layer row, so it can be filled after the map has rendered. */
 export const LAYER_ROW_CLASS = 'lcars-nav-layers';
@@ -202,10 +206,42 @@ export function syncNavLayers(doc: Document = document): boolean {
       { dispatch: (action: string) => dispatchAction(action) } as ChromeContext,
     );
     btn.classList.add('lcars-nav-btn-compact');
+    // Unknown until the dashboard reports. Stated rather than assumed off: a
+    // button claiming a layer is dark when it is lit is worse than one that
+    // has not heard yet.
+    btn.setAttribute('aria-pressed', 'false');
     row.appendChild(btn);
   });
   row.hidden = false;
   return true;
+}
+
+/**
+ * Reflects which layers the dashboard actually has lit.
+ *
+ * Reported by the display that owns the map, because the console forwards a
+ * toggle and never performs one — its own parked copy of the map would say
+ * something different, and confidently wrong is worse than blank.
+ *
+ * A key the console has no button for is ignored rather than treated as an
+ * error: it shows six of nineteen layers, so most of the report is about
+ * buttons that do not exist here.
+ */
+export function markLayerState(
+  state: Record<string, boolean>,
+  doc: Document = document,
+): void {
+  // Marks the row as informed, which is what lets the unlit buttons dim. Until
+  // this lands, dimming them would state "all off" rather than "not yet told".
+  doc.querySelector(`.${LAYER_ROW_CLASS}`)?.classList.add('is-reported');
+
+  for (const btn of doc.querySelectorAll<HTMLElement>(`.${LAYER_ROW_CLASS} [data-wm-action]`)) {
+    const key = (btn.dataset.wmAction ?? '').replace('map.layer:', '');
+    if (!(key in state)) continue;
+    const lit = state[key] === true;
+    btn.classList.toggle('is-lit', lit);
+    btn.setAttribute('aria-pressed', lit ? 'true' : 'false');
+  }
 }
 
 /** Lights the button for the active page. Called on every page change. */

@@ -639,6 +639,12 @@
 :root[data-wm-surface="nav"] {
   --wm-radius-elbow: 56px;
   --wm-radius-elbow-inner: 23px;
+
+  /* One real step down the scale — `head`, not an arbitrary size — because a
+     44px label in an 87px block leaves 10px of air and reads as crowded.
+     Redefining the token rather than overriding each rule keeps the console on
+     the same scale as everything else, just starting a step lower. */
+  --wm-font-size-title: var(--wm-font-size-head);
 }
 
 /* The console replaces the whole frame rather than sitting inside it, so the
@@ -680,8 +686,11 @@
   overflow: hidden;
 }
 
-/* Clear of the corner sweep: at a 56px radius the bottom-left of the block is
-   cut away, and text sitting on the block floor lands in the cut. */
+/* Clear of the corner sweep. At a 56px radius BOTH left corners are cut away,
+   so text at the top-left and the bottom-left lands in the cut — the cap read
+   "CARS" with the L sheared off. Indenting the text rather than shrinking the
+   radius keeps the elbow the size the frame wants. */
+.lcars-nav-cap-label,
 .lcars-nav-cap-code {
   padding-left: calc(var(--wm-radius-elbow) / 2);
 }
@@ -788,16 +797,41 @@
   box-shadow: inset 0 0 0 2px var(--wm-color-tan);
 }
 
-/* The active page reads as lit rather than as selected-with-an-outline. */
-.lcars-nav-btn.is-active {
-  background: var(--wm-color-ice);
-  color: var(--wm-color-bg);
+/* ---------- Which block is live ----------
+
+   The live block keeps its own colour and the row DIMS AROUND IT. Recolouring
+   the selected button was the obvious approach and it was wrong twice over:
+   every colour bright enough to read as "lit" is already one of the five
+   structural tones, so OPS-when-selected rendered identical to ENGINEERING at
+   rest — and overwriting the tone destroys the archetype information that
+   makes a page identifiable from the doorway in the first place.
+
+   Dimming is also how a real panel reads: one lamp lit among several unlit,
+   rather than one lamp changing colour. It costs no new token, survives a
+   palette swap, and states the same thing for pages and for layers, so the
+   console has one idea to learn instead of two. */
+
+.lcars-nav-pages .lcars-nav-btn:not(.is-active) {
+  opacity: 0.5;
 }
 
-.lcars-nav-btn.is-unavailable {
+/* Layers dim only ONCE THE DASHBOARD HAS REPORTED. Before that nothing is
+   known, and dimming everything would state "all off" — confidently wrong,
+   where blank is merely uninformative. */
+.lcars-nav-layers.is-reported .lcars-nav-btn:not(.is-lit) {
+  opacity: 0.5;
+}
+
+/* Three legible states, darkest last: live, not-current, and unavailable.
+   Selector specificity matters here — the row-dim rule above outranks a bare
+   class, so this has to match it or an unavailable page would read as merely
+   not-current. */
+.lcars-nav-btn.is-unavailable,
+.lcars-nav-pages .lcars-nav-btn.is-unavailable,
+.lcars-nav-layers .lcars-nav-btn.is-unavailable {
   /* Dimmed, not removed. A console whose buttons move as feeds come and go
      defeats the muscle memory a wall panel runs on. */
-  opacity: 0.32;
+  opacity: 0.18;
   cursor: default;
 }
 
@@ -819,7 +853,8 @@
   grid-template-columns: 1fr;
   align-items: center;
   justify-items: center;
-  padding: 4px;
+  /* The block token, not a magic 4px. Six buttons instead of ten pays for it. */
+  padding: var(--wm-space-block);
 }
 
 .lcars-nav-btn-compact .lcars-nav-code {
@@ -968,13 +1003,20 @@
    here costs nothing at merge time, where deleting the components upstream
    would conflict on every release forever.
 
+   `.community-widget` is the same thing arriving later — a "Join the Discord
+   Community" pill that fades in after a delay and parks itself over the
+   bottom-right corner. On the 1U console that is directly on top of the
+   status column. It is listed here rather than with the map overlays because
+   it is site furniture, not a control, and it belongs to no surface.
+
    `.skip-link` is deliberately left alone. It is `position: fixed`, so it
    costs no layout at all, and it is the one piece of this furniture that
    still does something — a keyboard is unlikely on a kiosk but free
    accessibility should not be thrown away to save zero pixels. */
 
 :root[data-wm-theme^="lcars"] .header,
-:root[data-wm-theme^="lcars"] .site-footer {
+:root[data-wm-theme^="lcars"] .site-footer,
+:root[data-wm-theme^="lcars"] .community-widget {
   display: none !important;
 }
 

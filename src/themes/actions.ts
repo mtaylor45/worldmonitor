@@ -116,6 +116,23 @@ function focusPanel(key: string | undefined, doc: Document = document): boolean 
   return true;
 }
 
+/**
+ * Which map layers are currently lit.
+ *
+ * Read from upstream's own `active` class rather than from any state we keep:
+ * the map may turn a layer off by itself when it hits its concurrent limit, or
+ * when a conflicting layer is chosen, so anything we remembered would be a
+ * guess that drifts.
+ */
+export function layerState(doc: Document = document): Record<string, boolean> {
+  const state: Record<string, boolean> = {};
+  for (const el of doc.querySelectorAll<HTMLElement>('.layer-toggle[data-layer]')) {
+    const key = el.getAttribute('data-layer');
+    if (key) state[key] = el.classList.contains('active');
+  }
+  return state;
+}
+
 /** Every map layer upstream has rendered a toggle for, by `data-layer`. */
 export function layerKeys(doc: Document = document): string[] {
   return [...doc.querySelectorAll<HTMLElement>('.layer-toggle[data-layer]')]

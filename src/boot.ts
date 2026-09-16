@@ -17,7 +17,13 @@ import { bootVoice } from './voice';
 import { applySurface, currentSurface, detectSurface, openBus } from './surface';
 import { startPages } from './pages/controller';
 import { PAGES } from './pages';
-import { markActivePage, markAvailablePages, syncNavLayers } from './themes/lcars/nav';
+import { layerState } from './themes/actions';
+import {
+  markActivePage,
+  markAvailablePages,
+  markLayerState,
+  syncNavLayers,
+} from './themes/lcars/nav';
 
 let booted = false;
 
@@ -98,8 +104,20 @@ export function bootApp(): Promise<void> {
     if (surface === 'nav') {
       let attempts = 0;
       const poll = window.setInterval(() => {
-        if (syncNavLayers() || (attempts += 1) > 10) window.clearInterval(poll);
+        if (syncNavLayers()) {
+          window.clearInterval(poll);
+          // The buttons exist now, so ask what they should be showing. The two
+          // panels boot independently: without a request, a console that came
+          // up second would wait for the next change before it knew anything.
+          bus.post({ type: 'request', what: 'layers' });
+          return;
+        }
+        if ((attempts += 1) > 10) window.clearInterval(poll);
       }, 1_500);
+
+      bus.subscribe((message) => {
+        if (message.type === 'layers') markLayerState(message.state);
+      });
     }
 
     const themes = bootThemes({
@@ -131,10 +149,23 @@ export function bootApp(): Promise<void> {
     // remote port of its own, so nothing is forwarded back and the two cannot
     // volley.
     if (surface !== 'nav') {
+      const report = () => bus.post({ type: 'layers', state: layerState() });
+
       bus.subscribe((message) => {
+        if (message.type === 'request' && message.what === 'layers') return void report();
         if (message.type !== 'action') return;
         getActionRouter()?.handle(message.action, message.argument);
+        // Reported after performing, not instead of: the map may refuse the
+        // toggle, turn a conflicting layer off, or hit its concurrent limit,
+        // and what it actually did is the only thing worth sending.
+        report();
       });
+
+      // Also when the map changes layers on its own — a conflicting layer
+      // being dropped, or the user touching the dashboard directly. Watched
+      // rather than polled because it is an attribute filter on one subtree,
+      // which is cheap, unlike observing a dashboard that repaints constantly.
+      startLayerWatch(report);
     }
 
     // The console shows no data, so it publishes no snapshot: the model would
@@ -156,6 +187,37 @@ export function bootApp(): Promise<void> {
     console.warn('[wm-boot] startup failed, dashboard continues:', error);
     return Promise.resolve();
   }
+}
+
+/**
+ * Reports layer changes the map makes on its own.
+ *
+ * The toggles do not exist when this runs — the map renders them seconds
+ * later — so this waits for them, then watches their `class` attribute, which
+ * is where upstream records which layers are lit.
+ */
+function startLayerWatch(report: () => void): void {
+  if (typeof MutationObserver !== 'function') return;
+
+  let attempts = 0;
+  const poll = window.setInterval(() => {
+    const host = document.querySelector('.layer-toggles');
+    if (!host) {
+      if ((attempts += 1) > 10) window.clearInterval(poll);
+      return;
+    }
+    window.clearInterval(poll);
+
+    let pending = 0;
+    new MutationObserver(() => {
+      // Coalesced: toggling one layer can restyle several at once when the
+      // map drops a conflicting one, and that is one change to report.
+      window.clearTimeout(pending);
+      pending = window.setTimeout(report, 120);
+    }).observe(host, { attributes: true, attributeFilter: ['class'], subtree: true });
+
+    report();
+  }, 1_500);
 }
 
 /**
