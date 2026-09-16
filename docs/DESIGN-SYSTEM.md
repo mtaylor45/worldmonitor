@@ -107,6 +107,17 @@ A page should be identifiable from the doorway before any label resolves. Frame
 colour and block rhythm carry that, not content. Second rail is LIBRARY-only —
 elsewhere it steals width the content needs.
 
+**Implemented as of 2026-09-16**, in `src/pages/`, selected from the 1U console
+and reachable by voice. Two notes on what the build actually does:
+
+- **SCAN takes lilac, not salmon.** The table above gives LONG RANGE SCAN a
+  peach/salmon frame, but salmon `#cc6666` is status-only in this fork — its
+  sole use is the alert block, and there is a test asserting it appears nowhere
+  in the chrome at rest. A page permanently wearing the alert colour would make
+  an actual alert mean nothing. The status rule wins.
+- **The rail is absent on the 2U dashboard entirely**, so "second rail is
+  LIBRARY-only" is moot there: navigation is on the other display.
+
 ## Motion
 
 **LCARS cuts, it does not fade.** The originals were backlit physical panels; a

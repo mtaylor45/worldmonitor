@@ -18,7 +18,7 @@ MODEL_DIR   ?= $(HERE)models
 
 .DEFAULT_GOAL := help
 
-.PHONY: help doctor models up down restart logs kiosk kiosk-uninstall test
+.PHONY: help doctor models up down restart logs kiosk kiosk-dual kiosk-uninstall test
 
 help: ## Show this help
 	@echo "LCARS World Monitor — deployment"
@@ -63,9 +63,28 @@ kiosk: ## Install the kiosk profile (needs root)
 	systemctl enable --now wm-kiosk.service; \
 	echo "Installed. Edit /etc/default/wm-kiosk, then: systemctl restart wm-kiosk"
 
+kiosk-dual: ## Install the TWO-display kiosk profile: sway, 2U + 1U (needs root)
+	@if [ "$$(id -u)" -ne 0 ]; then echo "kiosk-dual: run as root (sudo make -C deploy kiosk-dual)"; exit 1; fi
+	@set -e; \
+	id -u kiosk >/dev/null 2>&1 || useradd -r -m -d /var/lib/wm-kiosk -s /usr/sbin/nologin kiosk; \
+	command -v sway >/dev/null || apt-get install -y sway chromium; \
+	install -m 0755 $(HERE)kiosk/wm-kiosk-launch.sh /usr/local/bin/wm-kiosk-launch.sh; \
+	install -m 0755 $(HERE)kiosk/wm-kiosk-dual.sh /usr/local/bin/wm-kiosk-dual.sh; \
+	install -d -m 0755 /usr/local/share/wm-kiosk; \
+	install -m 0644 $(HERE)kiosk/wm-kiosk-dual.sway /usr/local/share/wm-kiosk/wm-kiosk-dual.sway; \
+	install -m 0644 $(HERE)kiosk/wm-kiosk-dual.service /etc/systemd/system/wm-kiosk-dual.service; \
+	[ -f /etc/default/wm-kiosk ] || install -m 0644 $(HERE)kiosk/wm-kiosk.env.example /etc/default/wm-kiosk; \
+	systemctl daemon-reload; \
+	echo "Installed. Set WM_KIOSK_OUT_DASHBOARD and WM_KIOSK_OUT_NAV in"; \
+	echo "/etc/default/wm-kiosk (swaymsg -t get_outputs), then:"; \
+	echo "  systemctl enable --now wm-kiosk-dual.service"
+
 kiosk-uninstall: ## Remove the kiosk profile, leaving /etc/default/wm-kiosk
 	@if [ "$$(id -u)" -ne 0 ]; then echo "run as root"; exit 1; fi
 	@-systemctl disable --now wm-kiosk.service
-	@rm -f /etc/systemd/system/wm-kiosk.service /usr/local/bin/wm-kiosk-launch.sh
+	@-systemctl disable --now wm-kiosk-dual.service
+	@rm -f /etc/systemd/system/wm-kiosk.service /etc/systemd/system/wm-kiosk-dual.service
+	@rm -f /usr/local/bin/wm-kiosk-launch.sh /usr/local/bin/wm-kiosk-dual.sh
+	@rm -rf /usr/local/share/wm-kiosk
 	@systemctl daemon-reload
 	@echo "Removed. /etc/default/wm-kiosk kept — delete it by hand if you meant to."

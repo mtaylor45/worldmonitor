@@ -39,6 +39,9 @@ The whole project follows from one idea:
 | LCARS sound system | 🟢 Implemented |
 | 12-column panel mapping | 🟢 Implemented |
 | Design-system conformance | 🟢 Asserted in CI |
+| Two-display layout (2U + 1U) | 🟢 Built, verified at both resolutions |
+| Dashboard pagination | 🟢 Built, derived from upstream's categories |
+| Multi-touch interaction | 🟡 Built / needs a real touchscreen |
 | Kiosk deployment configuration | 🟡 Written / hardware verification pending |
 | Palette choice | 🟡 Awaiting the physical panel |
 | Local voice assistant | 🟡 Built / hardware verification pending |
@@ -351,13 +354,20 @@ upstream files.
 worldmonitor/
 │
 ├── src/
+│   ├── surface/
+│   │   └── index.ts         which display this is; the cross-display bus
+│   │
+│   ├── pages/
+│   │   ├── index.ts         pages derived from upstream's category map
+│   │   └── controller.ts    keeps both displays on the same page
+│   │
 │   ├── themes/
 │   │   ├── engine.ts        registry, tokens, chrome lifecycle
 │   │   ├── actions.ts       action registry — rail and voice, one source
 │   │   ├── sounds.ts        slot-based UI sound playback
 │   │   ├── tokens.ts        upstream token contract (drift-checked)
 │   │   ├── default/         identity theme
-│   │   └── lcars/           tokens, chrome, stylesheet
+│   │   └── lcars/           tokens, chrome, nav console, stylesheet
 │   │
 │   ├── voice/
 │   │   ├── protocol.ts      wire protocol (twin of the sidecar's)
@@ -375,7 +385,7 @@ worldmonitor/
 │   └── sounds/              LCARS UI sounds + licence
 │
 ├── deploy/
-│   ├── Makefile             bring-up: models, up, doctor, kiosk
+│   ├── Makefile             bring-up: models, up, doctor, kiosk, kiosk-dual
 │   ├── models.conf          weights + verified sha256
 │   ├── fetch-models.sh      fetch and verify, idempotent
 │   └── kiosk/               cage + Chromium + systemd unit
@@ -420,10 +430,30 @@ Every directory above is populated. What remains is hardware verification.
 
 ## Kiosk
 
+Two displays, one machine:
+
+| Surface | Panel | Carries |
+|---|---|---|
+| `dashboard` | 2U, 1280×400 | The data. No rail — navigation moved off it |
+| `nav` | 1U, 1424×280 | The console: pages, actions, voice, status |
+| `panel` | 1280×720 | Single-display fallback, and the development target |
+
 ```bash
 make -C deploy models && make -C deploy up && make -C deploy doctor
-sudo make -C deploy kiosk
+sudo make -C deploy kiosk-dual     # two displays (sway)
+sudo make -C deploy kiosk          # one display  (cage)
 ```
+
+`cage` runs one fullscreen client by design, which is right for a single panel
+and useless for two, so the dual profile uses **sway** — still no desktop,
+still nothing that can steal focus, but able to assign a window to an output.
+Output names are machine-specific (`swaymsg -t get_outputs`) and the unit
+**refuses to start until they are set** rather than coming up with the panels
+swapped.
+
+The two windows share one Chromium profile, and that is load-bearing: same
+profile means same process group, which is what lets `BroadcastChannel` carry
+page selection between them without a server in the middle.
 
 `doctor` is the one to run before trusting a panel: every dependency the
 sidecar has fails silently, so it checks each and names a remedy rather than a
@@ -541,7 +571,7 @@ npx playwright test e2e/theme-engine-p0.spec.ts
 cd voice-sidecar && python3 -m unittest discover -s tests -t .
 ```
 
-Current counts: **230** sidecar tests, **815** DOM tests across 95 files, **36**
+Current counts: **230** sidecar tests, **834** DOM tests across 96 files, **48**
 end-to-end tests.
 
 Run all three after every upstream merge. The token test catches upstream

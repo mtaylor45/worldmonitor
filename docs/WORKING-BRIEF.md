@@ -49,6 +49,8 @@ Log every upstream file touched in `docs/UPSTREAM-DIFF.md`.
 | `src/boot.ts` | Composition root. The single upstream seam calls this |
 | `src/context/` | Panel state snapshot for the LLM (P3) |
 | `src/alert/` | Proactive alert state — the `data-wm-alert` attribute and its tone (P4) |
+| `src/surface/` | Which display this window is, and the bus that keeps the two agreeing |
+| `src/pages/` | Page model derived from upstream's category map, and the controller |
 | `deploy/` | Fork-owned bring-up: `Makefile`, verified model fetch, kiosk profile |
 | `preview/lcars-preview.html` | Standalone 1280x720 mock, no build step |
 | `preview/lcars-style-guide.html` | The design system, rendered. Open it when a decision needs to be *seen* |
@@ -282,6 +284,106 @@ upstream's protobuf toolchain; putting our bring-up there would spend a third
 seam on it. Weights are fetched by `models.conf` with sha256 values read from
 Hugging Face's own API, verified on every run, and a mismatch is refused rather
 than re-fetched.
+
+---
+
+## Two displays
+
+**The kiosk is two panels driven by one machine.** A 2U 1280x400 dashboard and
+a 1U 1424x280 navigation console, both multi-touch. `panel` (1280x720) survives
+as the single-display fallback and as the target you develop against.
+
+| Surface | Size | Carries |
+|---|---|---|
+| `dashboard` | 1280x400 | The data. Header, content well, footer — **no rail** |
+| `nav` | 1424x280 | The console: pages, actions, voice, status |
+| `panel` | 1280x720 | The original layout, rail and all |
+
+**Surface identity comes from the launch URL** (`?wm-surface=nav`), exactly as
+the theme does and for the same reason: a kiosk display has no keyboard, so
+identity must not depend on storage that could wedge. Viewport height is the
+fallback, for dragging a window during development.
+
+**The rail is dropped on `dashboard`, not restyled.** A 400px-tall column of
+eight buttons is 44px each with no room for the code-and-label floor the design
+system specifies, and a rail that cannot carry that detail is a list of buttons
+wearing LCARS colours. Removing it also gives the well back the 148px the
+column was costing, which at 400px tall is the difference between one row of
+panels and none.
+
+**The elbow radius scales per surface; the 2.40 : 1 ratio does not.**
+`border-radius` clamps to its box, so a 72px radius on a 40px-tall header
+renders at 40 — and the carve, being a separate box, clamps independently. The
+declared ratio would still pass a naive check while the rendered form had
+become a plain rounded corner, which is the one thing that identifies the
+language. Each surface declares radii that fit its own header.
+
+**The two displays talk over `BroadcastChannel`, not the sidecar.** The sidecar
+already fans out to every client and would have worked, but routing page
+selection through it would mean the console goes dead whenever the voice
+backend is down. Same origin, same Chromium profile, no server. `localStorage`
+carries the fallback and doubles as the last-known page, so a panel powering on
+second joins the page its sibling is already showing.
+
+**Both panels are touch, so hover is not merely useless but wrong** — a touch
+leaves `:hover` stuck on the last thing pressed. Press feedback is `:active`
+swapping the block to its field colour with no transition: a lamp switching,
+which is also the only thing fast enough to register before a finger lifts.
+Buttons are 96px, well past the 44px floor, because a wall panel is touched at
+arm's length by someone not looking closely.
+
+**`cage` cannot drive two displays.** It runs one fullscreen client by design,
+which is right for the single-display profile and useless for this one. The
+dual profile uses sway, which still has no desktop and nothing that can steal
+focus, and assigns each window to an output by `--class`. Output names are
+machine-specific, so the unit refuses to start until they are set rather than
+coming up with the panels swapped.
+
+**A touchscreen left unmapped sends whole-layout coordinates**, so a touch on
+the lower panel lands on the upper one. `map_to_output` per device is what
+makes touch work at all on a multi-output kiosk, and it is the most common
+thing to get wrong.
+
+---
+
+## Pages
+
+**189 panels across 23 categories. A 1280x400 display holds four or five.**
+Pagination is not a convenience, it is the only way the dashboard fits the
+hardware — and `docs/DESIGN-SYSTEM.md` specified it before it existed, in the
+"Page archetypes" table.
+
+**Pages are derived from `PANEL_CATEGORY_MAP`, never duplicated.** Importing
+upstream's map read-only means a panel upstream adds lands on a page with no
+edit here; a rename breaks the build rather than the display. Duplicating the
+list would fail the other way — silently, months later, with a panel nobody can
+reach.
+
+**Panels are hidden by a class, never removed.** Upstream owns that markup, and
+a chart rendered at zero width does not recover on its own — which is why
+upstream's own category filter dispatches a resize afterwards and why this
+does too. No upstream file is touched.
+
+**Only pages with rendered panels are offered.** A button navigating to an
+empty page is the same failure as a rail button naming a panel that does not
+exist: it silently does nothing. Unavailable pages are dimmed rather than
+removed, because a console whose buttons move defeats the muscle memory a wall
+panel runs on.
+
+**`panel.focus` switches page first.** A panel on another page is not reachable
+by scrolling, so without this the command would scroll to a hidden element and
+appear to do nothing.
+
+**An action whose subsystem is absent is not registered at all.**
+`actionNames()` feeds the model's snapshot and `toolSchema()` generates its
+tools, so registering a dead action would offer the assistant something it is
+guaranteed to be refused for choosing.
+
+**SCAN diverges from the design system on one point, deliberately.** Its
+archetype table gives LONG RANGE SCAN a peach/salmon frame, but salmon is
+status-only here — its sole use is the alert block, and there is a test. A page
+permanently wearing the alert colour would make an actual alert mean nothing,
+so SCAN takes lilac from the structural ramp instead.
 
 ---
 

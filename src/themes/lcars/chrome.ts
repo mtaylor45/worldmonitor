@@ -1,5 +1,7 @@
 import { CONTENT_ATTRIBUTE } from '../engine';
 import type { ChromeContext, ThemeChrome } from '../types';
+import { currentSurface } from '../../surface';
+import { buildNavConsole } from './nav';
 
 /**
  * LCARS frame construction.
@@ -9,15 +11,29 @@ import type { ChromeContext, ThemeChrome } from '../types';
  * voice indicator. Everything the dashboard renders goes inside the content
  * well bounded by the elbow.
  *
- * Structure:
+ * Three surfaces, one theme (see `src/surface/`):
  *
- *   ┌──────┐╭──────────────────────────────────╮
- *   │ rail ││  header bar          WORLD MONITOR│
- *   │  ╭───╯╰──────────────────────────────────╯
- *   │  │
- *   │  │     [data-wm-content]
- *   │  │
- *   ╰──┴───────────────────────────────────────╯
+ *   panel      1280x720   ┌──────┐╭─────────────────────────────╮
+ *   the original layout,  │ rail ││ header bar     WORLD MONITOR│
+ *   and the fallback when │  ╭───╯╰─────────────────────────────╯
+ *   one display is        │  │
+ *   connected             │  │      [data-wm-content]
+ *                         ╰──┴──────────────────────────────────╯
+ *
+ *   dashboard  1280x400   ╭──────────────────────────────────────╮
+ *   no rail: navigation   │ header bar             WORLD MONITOR │
+ *   lives on the other    ╰──────────────────────────────────────╯
+ *   display, and at 400px   [data-wm-content]
+ *   tall the well needs   ╭──────────────────────────────────────╮
+ *   all 1280 of the width │ transcript                   VOICE   │
+ *                         ╰──────────────────────────────────────╯
+ *
+ *   nav        1424x280   the console. `nav.ts`.
+ *
+ * The rail is dropped on `dashboard` rather than restyled. A 400px-tall column
+ * of eight buttons would be 44px each with no room for the code-and-label
+ * floor the design system specifies, and a rail that cannot carry that detail
+ * is a list of buttons wearing LCARS colours.
  */
 
 interface RailItem {
@@ -163,19 +179,41 @@ export const lcarsChrome: ThemeChrome = {
     // content well. Teardown puts it back exactly as found.
     const original = [...host.childNodes];
 
-    const frame = el('div', FRAME_CLASS);
-    const header = buildHeader();
-    const body = el('div', 'lcars-body');
-    const rail = buildRail(ctx);
+    const surface = currentSurface(host.ownerDocument);
+    const frame = el('div', `${FRAME_CLASS} lcars-surface-${surface}`);
+
+    if (surface === 'nav') {
+      // The console renders no dashboard content at all. Whatever upstream
+      // put here is preserved but parked out of the flow, so teardown can
+      // still put it back exactly as found.
+      const parked = el('div', 'lcars-parked');
+      parked.setAttribute(CONTENT_ATTRIBUTE, '');
+      parked.hidden = true;
+      for (const node of original) parked.appendChild(node);
+
+      frame.appendChild(buildNavConsole(ctx));
+      frame.appendChild(parked);
+      host.appendChild(frame);
+      return () => unwrap(host, frame);
+    }
+
     const content = el('main', 'lcars-content');
     content.setAttribute(CONTENT_ATTRIBUTE, '');
-
     for (const node of original) content.appendChild(node);
 
-    body.appendChild(rail);
-    body.appendChild(content);
-    frame.appendChild(header);
-    frame.appendChild(body);
+    frame.appendChild(buildHeader());
+
+    if (surface === 'dashboard') {
+      // No rail, and so no body grid to hold one: the content well takes the
+      // full width the removed rail gave back.
+      frame.appendChild(content);
+    } else {
+      const body = el('div', 'lcars-body');
+      body.appendChild(buildRail(ctx));
+      body.appendChild(content);
+      frame.appendChild(body);
+    }
+
     frame.appendChild(buildFooter());
     host.appendChild(frame);
 

@@ -7,7 +7,13 @@
  */
 
 import { DEFAULT_THEME_ID, themes } from './engine';
-import { createActions, installActions, type ActionRouter, type VoicePort } from './actions';
+import {
+  createActions,
+  installActions,
+  type ActionRouter,
+  type PagePort,
+  type VoicePort,
+} from './actions';
 import { createSoundPlayer, type SoundPlayer } from './sounds';
 import { defaultTheme } from './default';
 import { lcars, lcarsBright } from './lcars';
@@ -92,7 +98,9 @@ function themeFromUrl(): string | null {
  * unattended kiosk, where an exception here would cost the whole dashboard for
  * the sake of its colour scheme.
  */
-export function bootThemes(options: { voice?: VoicePort } = {}): Promise<void> {
+export function bootThemes(
+  options: { voice?: VoicePort; pages?: PagePort } = {},
+): Promise<void> {
   if (booted) return Promise.resolve();
   booted = true;
 
@@ -114,6 +122,7 @@ export function bootThemes(options: { voice?: VoicePort } = {}): Promise<void> {
           ids: () => themes.list().map((t) => t.id),
         },
         options.voice,
+        options.pages,
       ),
       // Audible outcome for every dispatch: the refusal tone on a command that
       // could not be carried out is what stops a dead rail button reading as a

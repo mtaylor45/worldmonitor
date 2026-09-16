@@ -1,0 +1,45 @@
+# LCARS World Monitor — two-display kiosk unit.
+#
+# The single-display sibling (wm-kiosk.service) runs cage, which is the right
+# tool for one fullscreen client. This one runs sway, because cage cannot place
+# a window on a second output — and two panels is the whole point here.
+#
+# Enable ONE of the two. They both want the display and will fight over it.
+#
+# Install:
+#   sudo make -C deploy kiosk-dual
+#
+# Configure via /etc/default/wm-kiosk, which MUST carry the output names for
+# this machine (see wm-kiosk.env.example).
+
+[Unit]
+Description=LCARS World Monitor kiosk (two displays)
+After=network-online.target systemd-user-sessions.service
+Wants=network-online.target
+Conflicts=wm-kiosk.service
+
+[Service]
+Type=simple
+User=kiosk
+Group=kiosk
+PAMName=login
+
+EnvironmentFile=-/etc/default/wm-kiosk
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=WM_KIOSK_SWAY_TEMPLATE=/usr/local/share/wm-kiosk/wm-kiosk-dual.sway
+
+ExecStart=/usr/local/bin/wm-kiosk-dual.sh
+
+# An unattended panel must come back on its own. Exit 78 is a configuration
+# error — missing output names — and restarting will not fix it, so the unit
+# stops and says so rather than looping every five seconds for a week.
+Restart=always
+RestartSec=5
+RestartPreventExitStatus=78
+StartLimitIntervalSec=0
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical.target

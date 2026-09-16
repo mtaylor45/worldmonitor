@@ -548,3 +548,305 @@
 @media (max-width: 1130px) {
   :root[data-wm-theme^="lcars"] .variant-switcher { display: none !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SURFACES — two displays, one theme
+
+   The kiosk is a 2U 1280x400 dashboard and a 1U 1424x280 navigation console,
+   driven by one machine (src/surface/). `panel` is the original 1280x720
+   layout, kept as the fallback when only one output is connected.
+
+   What changes per surface is geometry, never the language. The elbow is
+   still one block and one carve; the gutter is still 5px and absolute; salmon
+   and red are still status only.
+
+   THE ELBOW SCALES, BECAUSE THE RATIO IS THE RULE AND THE RADIUS IS NOT.
+   `border-radius` clamps to the box: a 72px radius on a 40px-tall header
+   renders at 40px, and the carve — a separate box — clamps independently, so
+   the 2.40 : 1 that identifies the form is destroyed exactly where the frame
+   is tightest. Each surface therefore declares radii that fit its own header,
+   holding 2.40 : 1 in the rendered pixels rather than only in the stylesheet.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ---------- Dashboard: 2U, 1280x400 ----------
+
+   400px is 55% of the height the frame was drawn for, and the frame was
+   already 112px of it. Header and footer come down proportionally, and the
+   rail is gone entirely — it is on the other display, which also gives the
+   well back the 148px the column was costing. */
+
+:root[data-wm-surface="dashboard"] {
+  --wm-space-header: 40px;
+  --wm-space-footer: 30px;
+  /* 36 : 15 is 2.40 : 1, and 36 fits inside a 40px header uncropped. */
+  --wm-radius-elbow: 36px;
+  --wm-radius-elbow-inner: 15px;
+  --wm-extra-elbow-arm: 34px;
+}
+
+/* No rail means no body grid: the well is the full width of the frame. The
+   header keeps its own three-column grid so the elbow still anchors the
+   top-left corner — without it the bar would start flush and the frame would
+   stop reading as LCARS at all. */
+:root[data-wm-surface="dashboard"] .lcars-frame > .lcars-content {
+  border-bottom-left-radius: var(--wm-radius-block);
+}
+
+:root[data-wm-surface="dashboard"] .lcars-header {
+  grid-template-columns: var(--wm-radius-elbow) minmax(0, 1fr) auto;
+}
+
+:root[data-wm-surface="dashboard"] .lcars-footer {
+  grid-template-columns: var(--wm-radius-elbow) minmax(0, 1fr);
+}
+
+/* One row of panels is all 400px holds. The span ladder below is written for
+   a 720px-tall well and would stack two rows off the bottom edge. */
+:root[data-wm-surface="dashboard"] .panels-grid > * {
+  max-height: 100%;
+}
+
+/* ---------- Navigation console: 1U, 1424x280 ---------- */
+
+:root[data-wm-surface="nav"] {
+  --wm-radius-elbow: 56px;
+  --wm-radius-elbow-inner: 23px;
+}
+
+/* The console replaces the whole frame rather than sitting inside it, so the
+   header/content/footer row template does not apply: it would put the console
+   in the `auto` row and leave the rest of the strip as dead field. */
+.lcars-frame.lcars-surface-nav {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* Upstream's dashboard is parked, not destroyed: teardown has to put it back
+   exactly as found, and `hidden` plus `display:none` is reversible where
+   removing the nodes would not be. */
+.lcars-parked {
+  display: none !important;
+}
+
+.lcars-nav {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr) 232px;
+  gap: var(--wm-space-gutter);
+  height: 100%;
+  min-height: 0;
+}
+
+/* The console's one piece of frame, so it reads as the same system as the
+   dashboard rather than as a separate toolbar bolted on. */
+.lcars-nav-cap {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: var(--wm-space-block);
+  background: var(--wm-color-tan);
+  color: var(--wm-color-bg);
+  border-top-left-radius: var(--wm-radius-elbow);
+  border-bottom-left-radius: var(--wm-radius-elbow);
+  font-family: var(--wm-font-display);
+  text-transform: uppercase;
+  overflow: hidden;
+}
+
+/* Clear of the corner sweep: at a 56px radius the bottom-left of the block is
+   cut away, and text sitting on the block floor lands in the cut. */
+.lcars-nav-cap-code {
+  padding-left: calc(var(--wm-radius-elbow) / 2);
+}
+
+.lcars-nav-cap-label {
+  font-size: var(--wm-font-size-title);
+  letter-spacing: var(--wm-extra-tracking-title);
+  line-height: 1;
+}
+
+.lcars-nav-cap-code {
+  font-size: var(--wm-font-size-label);
+  opacity: 0.75;
+}
+
+.lcars-nav-stack {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  gap: var(--wm-space-gutter);
+  min-height: 0;
+  min-width: 0;
+}
+
+.lcars-nav-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: var(--wm-space-gutter);
+  min-height: 0;
+  min-width: 0;
+}
+
+/* The interrupt tab keeps its own narrow TRACK, not a narrow element inside a
+   full-width one — otherwise the remainder of its column reads as a hole at
+   the end of the row. */
+.lcars-nav-actions {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 72px;
+}
+
+/* ---------- Console buttons ----------
+
+   Code bottom-left, label bottom-right, both on the block floor — the same
+   anatomy as a rail button, because it is the same component rotated. */
+
+.lcars-nav-btn {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: end;
+  gap: var(--wm-space-gutter);
+  /* Well past the 44px touch floor: this is touched at arm's length by
+     someone not looking closely, on a panel with no cursor to aim with. */
+  min-height: 96px;
+  padding: var(--wm-space-block);
+  border: 0;
+  border-radius: var(--wm-radius-block);
+  color: var(--wm-color-bg);
+  font-family: var(--wm-font-display);
+  font-size: var(--wm-font-size-label);
+  text-transform: uppercase;
+  letter-spacing: var(--wm-extra-tracking-label);
+  cursor: pointer;
+  /* The panel scrolls nothing. Letting the browser wait to see whether a
+     touch becomes a pan adds ~300ms to every press for no benefit here. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* Zero specificity on purpose: `.lcars-tone-*` must win, or every button on
+   the console renders tan and the archetype tones — the thing that makes a
+   page identifiable from the doorway — carry nothing at all. */
+:where(.lcars-nav-btn) {
+  background: var(--wm-color-tan);
+}
+
+.lcars-nav-code {
+  font-size: var(--wm-font-size-label);
+  opacity: 0.7;
+}
+
+.lcars-nav-label {
+  justify-self: end;
+  font-size: var(--wm-font-size-title);
+  line-height: 1;
+}
+
+/* Press feedback is a lamp switching, not a button animating: the block takes
+   the field colour and the text takes the block's, instantly. No transition —
+   LCARS cuts, it does not fade, and on touch the press has to register before
+   the finger lifts or it registers as nothing. */
+.lcars-nav-btn:active {
+  background: var(--wm-color-bg);
+  color: var(--wm-color-tan);
+  box-shadow: inset 0 0 0 2px var(--wm-color-tan);
+}
+
+/* The active page reads as lit rather than as selected-with-an-outline. */
+.lcars-nav-btn.is-active {
+  background: var(--wm-color-ice);
+  color: var(--wm-color-bg);
+}
+
+.lcars-nav-btn.is-unavailable {
+  /* Dimmed, not removed. A console whose buttons move as feeds come and go
+     defeats the muscle memory a wall panel runs on. */
+  opacity: 0.32;
+  cursor: default;
+}
+
+.lcars-nav-btn:focus-visible {
+  outline: 3px solid var(--wm-color-ice);
+  outline-offset: -3px;
+}
+
+/* ---------- Console status column ---------- */
+
+/* Voice takes the column and the transcript sits under it only when there is
+   one: `auto` on an element that is `hidden` collapses to nothing, so the tag
+   fills the strip at rest instead of floating above a black void. */
+.lcars-nav-status {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--wm-space-gutter);
+  min-height: 0;
+  min-width: 0;
+}
+
+.lcars-nav-status .lcars-voice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  padding: var(--wm-space-block);
+  /* Square corners: the status tag is the one rectangular element in the
+     language, which is exactly why the eye finds it. */
+  border-radius: 0;
+}
+
+.lcars-nav-status .lcars-transcript {
+  overflow: hidden;
+  padding: var(--wm-space-block);
+  background: var(--wm-color-surface);
+  color: var(--wm-color-readout);
+  font-size: var(--wm-font-size-label);
+  line-height: 1.3;
+}
+
+/* ---------- Pages ----------
+
+   Hidden, never removed: upstream owns this markup, and a chart rendered at
+   zero width does not recover on its own. Mirrors upstream's own category
+   filter (.mobile-cat-hidden, main.css) rather than inventing a mechanism. */
+
+.wm-page-hidden {
+  display: none !important;
+}
+
+/* ---------- Touch, on both displays ----------
+
+   Neither panel has a cursor. Hover is not merely useless here, it is
+   actively wrong: a touch leaves the :hover state stuck on the last thing
+   pressed until something else is touched. */
+
+:root[data-wm-surface="dashboard"],
+:root[data-wm-surface="nav"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root[data-wm-surface="dashboard"] .lcars-frame *,
+:root[data-wm-surface="nav"] .lcars-frame * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (hover: none) {
+  .lcars-nav-btn:hover,
+  .lcars-rail-btn:hover {
+    /* Explicitly nothing. The rule exists so a future hover style cannot
+       reach a touch panel by accident. */
+    background: inherit;
+  }
+}
+
+/* The console is a fixed 1424x280 surface with nothing to scroll, and a
+   rubber-band overscroll on a wall panel reads as the display coming loose. */
+:root[data-wm-surface="nav"] {
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lcars-nav-btn:active {
+    box-shadow: none;
+  }
+}

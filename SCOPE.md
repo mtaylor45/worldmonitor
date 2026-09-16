@@ -27,6 +27,14 @@ alert behaviour, the panel-at-a-glance layout — follows from it.
 
 ## 2. Constraints
 
+> **Updated 2026-09-16 — the panel is now two panels.** A 2U 1280x400 LCD
+> carries the dashboard and a 1U 1424x280 LCD carries navigation and page
+> selection, both multi-touch, both driven by the one NUC. The single 1280x720
+> target is retained as the fallback when one output is connected and as the
+> development target. Everything below that says "the panel" and gives 1280x720
+> should be read as that fallback; `docs/WORKING-BRIEF.md` §"Two displays"
+> carries the current geometry.
+
 | | |
 |---|---|
 | Display | 1280×720 fixed, 9-inch (~163 PPI). No responsive breakpoints. Design to the pixel. |

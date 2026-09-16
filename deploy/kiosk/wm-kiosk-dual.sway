@@ -1,0 +1,76 @@
+# sway config for the two-display kiosk.
+#
+# `cage` runs one fullscreen client and cannot place a second window on a
+# second output — that is its whole design, and it is the right tool for the
+# single-display fallback. Two displays need a compositor that can assign a
+# window to an output, so the dual profile uses sway instead. It is still a
+# tiling Wayland compositor with no desktop, no launcher and nothing that can
+# steal focus; it simply knows about more than one screen.
+#
+# OUTPUT NAMES ARE MACHINE-SPECIFIC. Find yours with:
+#
+#   swaymsg -t get_outputs | grep -E '"name"|"model"'
+#
+# then set WM_KIOSK_OUT_DASHBOARD and WM_KIOSK_OUT_NAV in /etc/default/wm-kiosk.
+# The `$out_*` values below are substituted by wm-kiosk-dual.sh at start; this
+# file is a template, not a literal config.
+
+### Outputs ---------------------------------------------------------------
+
+# The console is the wider panel, so it sets the x origin and the dashboard is
+# centred over it: (1424 - 1280) / 2 = 72. Getting this wrong does not show up
+# as a layout bug — each window is fullscreen on its own output either way — it
+# shows up as touch landing off by 72px on one panel, because pointer
+# coordinates are in whole-layout space.
+output $out_dashboard resolution 1280x400 position 72 0
+output $out_nav resolution 1424x280 position 0 400
+
+### Chrome ----------------------------------------------------------------
+
+default_border none
+default_floating_border none
+titlebar_padding 0
+gaps inner 0
+gaps outer 0
+# Nothing to focus-follow on a panel with no pointer, and a stray touch near an
+# edge should not move focus between displays.
+focus_follows_mouse no
+
+# No wallpaper, no fallback colour that could flash between reloads: the field
+# colour is the theme's job and the compositor should never be visible.
+output * bg #000000 solid_color
+
+### Window placement ------------------------------------------------------
+
+# Each Chromium window is tagged with --class by wm-kiosk-launch.sh, which is
+# what lets these rules put the right surface on the right panel. Without the
+# class the two windows are indistinguishable and sway would place them by
+# arrival order — a race that silently swaps the displays on a slow boot.
+assign [app_id="wm-kiosk-dashboard"] output $out_dashboard
+assign [app_id="wm-kiosk-nav"] output $out_nav
+
+for_window [app_id="wm-kiosk-dashboard"] fullscreen enable, inhibit_idle focus
+for_window [app_id="wm-kiosk-nav"] fullscreen enable, inhibit_idle focus
+
+### Input -----------------------------------------------------------------
+
+# Both panels are multi-touch. Left unmapped, a touchscreen sends its events in
+# the coordinate space of the WHOLE layout, so a touch on the lower panel lands
+# on the upper one. Mapping each device to its output is what makes touch work
+# at all on a multi-output kiosk, and it is the single most common thing to get
+# wrong here.
+#
+# Find device identifiers with: swaymsg -t get_inputs
+input type:touch {
+    events enabled
+}
+
+# Per-device mapping, substituted at start. Leave the env vars empty on a
+# single-touchscreen setup.
+input $in_touch_dashboard map_to_output $out_dashboard
+input $in_touch_nav map_to_output $out_nav
+
+### Start -----------------------------------------------------------------
+
+exec /usr/local/bin/wm-kiosk-launch.sh dashboard
+exec /usr/local/bin/wm-kiosk-launch.sh nav

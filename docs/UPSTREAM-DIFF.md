@@ -10,6 +10,18 @@ register exists to keep the surface small enough to audit before every merge.
 
 ---
 
+## Files imported, but not modified
+
+Read-only imports of upstream modules. These cost nothing at merge time — no
+upstream line changes — but they are a real coupling, and the failure mode is
+different from a patch: upstream renaming an export breaks our **build**, which
+is the loud kind of breakage and the reason this is preferred to duplicating
+the data.
+
+| Import | Used by | If upstream moves it |
+|---|---|---|
+| `PANEL_CATEGORY_MAP` from `src/config/panels.ts` | `src/pages/` | Build fails at `tsc`. Re-point the import; do not copy the map, or pages silently rot as upstream adds panels |
+
 ## Files modified
 
 | File | Lines | Change | Phase |

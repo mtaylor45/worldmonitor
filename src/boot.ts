@@ -11,9 +11,13 @@
  * keeps it that way as more subsystems arrive (P3 adds `src/context/`).
  */
 
-import { bootThemes, getActionRouter } from './themes';
+import { THEME_CHANGE_EVENT, bootThemes, getActionRouter } from './themes';
 import { startContextPublisher } from './context';
 import { bootVoice } from './voice';
+import { applySurface, currentSurface, detectSurface } from './surface';
+import { startPages } from './pages/controller';
+import { PAGES } from './pages';
+import { markActivePage, markAvailablePages } from './themes/lcars/nav';
 
 let booted = false;
 
@@ -32,6 +36,12 @@ export function bootApp(): Promise<void> {
   booted = true;
 
   try {
+    // Surface FIRST, before anything reads it. The theme's chrome branches on
+    // it at mount time — a rail on a 400px-tall dashboard, or a console on the
+    // wrong display, is not something that can be corrected afterwards without
+    // a full re-mount.
+    applySurface(detectSurface());
+
     // Voice first, so the port exists before the action registry is built and
     // `voice.ptt` can reach a real client rather than a stub.
     const voice = bootVoice({
@@ -47,7 +57,41 @@ export function bootApp(): Promise<void> {
         getActionRouter()?.handle(action, argument) ?? false,
     });
 
-    const themes = bootThemes({ voice });
+    // Pages before themes, so `page.set` is already in the registry that the
+    // console's buttons dispatch through.
+    const pages = startPages({
+      onChange: (id, available) => {
+        markActivePage(id);
+        markAvailablePages(available);
+      },
+    });
+
+    // The controller runs its first pass before any chrome exists, so the
+    // console has no buttons to light yet — and a theme cycle rebuilds them,
+    // losing the lit one. `THEME_CHANGE_EVENT` fires after the chrome mounts
+    // on both paths, which makes it the one hook that covers boot and every
+    // switch afterwards. Re-applied without broadcasting: nothing about the
+    // shared page actually changed, and telling the other display otherwise
+    // would make a theme cycle on one panel look like a navigation on both.
+    document.addEventListener(THEME_CHANGE_EVENT, () => {
+      pages.set(pages.current(), { broadcast: false });
+    });
+
+    const themes = bootThemes({
+      voice,
+      pages: {
+        set: (id) => pages.set(id),
+        next: () => pages.next(),
+        current: () => pages.current(),
+        ids: () => PAGES.map((page) => page.id),
+        pageFor: (key) => pages.pageFor(key),
+      },
+    });
+
+    // The console shows no data, so it publishes no snapshot: the model would
+    // be told the dashboard has no panels, which is true of this window and
+    // false of the system. The dashboard window publishes for both.
+    if (currentSurface() === 'nav') return themes;
 
     // The model reads this snapshot and never the DOM (SCOPE.md §3).
     startContextPublisher({

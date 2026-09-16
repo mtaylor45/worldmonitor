@@ -36,6 +36,17 @@ export interface ActionDefinition {
   /** One line. Becomes the tool description P3 hands the model. */
   readonly summary: string;
   readonly argument?: ActionArgument;
+  /**
+   * Whether this action can work at all in this build.
+   *
+   * Checked once, when the registry is installed. An action whose backing
+   * subsystem is absent is left out entirely rather than registered and made
+   * to fail: `actionNames()` feeds the model's snapshot and `toolSchema()`
+   * generates its tools, so registering a dead action would offer the
+   * assistant something it is guaranteed to be refused for choosing. Omitted
+   * means always available.
+   */
+  available?(): boolean;
   /** Returns false when the action could not be carried out. */
   run(argument: string | undefined): boolean;
 }
@@ -100,6 +111,23 @@ export interface VoicePort {
   readonly connected: boolean;
 }
 
+/**
+ * What the action layer needs from the page controller.
+ *
+ * A port rather than an import: the registry stays unaware of `src/pages/`,
+ * which is what lets the console, the rail and the voice layer all dispatch
+ * page changes through one code path without any of them depending on each
+ * other. `src/boot.ts` supplies the real one.
+ */
+export interface PagePort {
+  set(id: string): boolean;
+  next(): boolean;
+  current(): string;
+  ids(): string[];
+  /** The page a panel key lives on, or null when pages are not in use. */
+  pageFor(key: string): { id: string } | null;
+}
+
 export function createActions(
   theme: {
     set(id: string): void;
@@ -107,6 +135,7 @@ export function createActions(
     ids(): string[];
   },
   voice?: VoicePort,
+  pages?: PagePort,
 ): ActionDefinition[] {
   return [
     {
@@ -117,7 +146,17 @@ export function createActions(
         description: 'Panel key, e.g. "cii" for Country Instability.',
         enumerate: () => panelKeys(),
       },
-      run: (arg) => focusPanel(arg),
+      run: (arg) => {
+        // A panel on another page is not reachable by scrolling. Without this
+        // the command would silently do nothing, which on a wall display is
+        // indistinguishable from a broken one - the same failure the rail
+        // rules warn about for a button naming a panel that does not exist.
+        if (arg && pages) {
+          const page = pages.pageFor(arg);
+          if (page && page.id !== pages.current()) pages.set(page.id);
+        }
+        return focusPanel(arg);
+      },
     },
     {
       action: 'map.focus',
@@ -145,6 +184,26 @@ export function createActions(
         theme.cycle();
         return true;
       },
+    },
+    {
+      action: 'page.set',
+      summary: 'Show a named dashboard page.',
+      argument: {
+        name: 'page',
+        description: 'Page id, e.g. "ops", "scan", "engineering".',
+        enumerate: () => pages?.ids() ?? [],
+      },
+      // Absent from the registry entirely when no page controller is wired,
+      // so the model is never offered an action that cannot work. `available`
+      // is checked before the action is registered, not inside `run`.
+      available: () => Boolean(pages),
+      run: (arg) => (arg ? (pages?.set(arg) ?? false) : false),
+    },
+    {
+      action: 'page.next',
+      summary: 'Advance to the next dashboard page.',
+      available: () => Boolean(pages),
+      run: () => pages?.next() ?? false,
     },
     {
       action: 'voice.ptt',
@@ -192,7 +251,11 @@ export function installActions(
   actions: ActionDefinition[],
   onResult?: (action: string, handled: boolean) => void,
 ): ActionRouter {
-  const byName = new Map(actions.map((a) => [a.action, a]));
+  // Filtered here rather than at dispatch: an unavailable action must not
+  // appear in `actionNames()` or `toolSchema()` either, and those read this
+  // same map.
+  const live = actions.filter((a) => a.available?.() ?? true);
+  const byName = new Map(live.map((a) => [a.action, a]));
 
   const handle = (raw: string, payload?: unknown): boolean => {
     const parsed = parseAction(raw);
@@ -222,9 +285,9 @@ export function installActions(
 
   return {
     handle,
-    actionNames: () => actions.map((a) => a.action),
+    actionNames: () => live.map((a) => a.action),
     toolSchema: () =>
-      actions.map((a) => {
+      live.map((a) => {
         const properties: Record<
           string,
           { type: 'string'; description: string; enum?: string[] }
