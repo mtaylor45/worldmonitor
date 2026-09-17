@@ -6,7 +6,7 @@
 set -euo pipefail
 
 # Defaults are overridable from /etc/default/wm-kiosk.
-WM_KIOSK_URL="${WM_KIOSK_URL:-http://localhost:5173/}"
+WM_KIOSK_URL="${WM_KIOSK_URL:-http://localhost:3000/}"
 WM_KIOSK_THEME="${WM_KIOSK_THEME:-lcars}"
 WM_KIOSK_PROFILE="${WM_KIOSK_PROFILE:-/var/lib/wm-kiosk/chromium}"
 WM_KIOSK_BROWSER="${WM_KIOSK_BROWSER:-/usr/bin/chromium}"
@@ -41,6 +41,18 @@ case "${WM_KIOSK_URL}" in
   *\?*) separator='&' ;;
 esac
 url="${WM_KIOSK_URL}${separator}wm-theme=${WM_KIOSK_THEME}&wm-surface=${WM_KIOSK_SURFACE}"
+
+# Wait for the dashboard before painting anything. Chromium caches the error
+# page it lands on, so a panel that starts half a second early shows
+# "connection refused" until someone reloads it — and a wall panel has nobody
+# to reload it. Bounded, because a server that never comes up should still get
+# a window: a visible error beats a black screen with no clue in it.
+if command -v curl >/dev/null 2>&1; then
+    for _ in $(seq 1 60); do
+        curl -fsS -o /dev/null --max-time 2 "${WM_KIOSK_URL}" && break
+        sleep 2
+    done
+fi
 
 exec "${WM_KIOSK_BROWSER}" \
   --kiosk \

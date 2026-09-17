@@ -18,7 +18,7 @@ MODEL_DIR   ?= $(HERE)models
 
 .DEFAULT_GOAL := help
 
-.PHONY: help doctor models up down restart logs kiosk kiosk-dual kiosk-uninstall test
+.PHONY: help doctor models up down restart logs dashboard kiosk kiosk-dual kiosk-uninstall test
 
 help: ## Show this help
 	@echo "LCARS World Monitor — deployment"
@@ -50,6 +50,19 @@ logs: ## Follow the sidecar log
 
 test: ## Run the sidecar test suite
 	@cd $(ROOT)/voice-sidecar && $(PY) -m unittest discover -s tests -t .
+
+dashboard: ## Install the dashboard server unit (needs root)
+	@if [ "$$(id -u)" -ne 0 ]; then echo "dashboard: run as root (sudo make -C deploy dashboard)"; exit 1; fi
+	@set -e; \
+	id -u wm >/dev/null 2>&1 || useradd -r -m -d /var/lib/wm -s /usr/sbin/nologin wm; \
+	command -v node >/dev/null || { echo "node is not installed — see deploy/INSTALL.md"; exit 1; }; \
+	install -m 0755 $(HERE)kiosk/wm-dashboard.sh /usr/local/bin/wm-dashboard.sh; \
+	install -m 0644 $(HERE)kiosk/wm-dashboard.service /etc/systemd/system/wm-dashboard.service; \
+	[ -f /etc/default/wm-kiosk ] || install -m 0644 $(HERE)kiosk/wm-kiosk.env.example /etc/default/wm-kiosk; \
+	systemctl daemon-reload; \
+	echo "Installed. Set WM_APP_DIR in /etc/default/wm-kiosk, chown the checkout"; \
+	echo "to wm:wm, then:"; \
+	echo "  systemctl enable --now wm-dashboard.service"
 
 kiosk: ## Install the kiosk profile (needs root)
 	@if [ "$$(id -u)" -ne 0 ]; then echo "kiosk: run as root (sudo make -C deploy kiosk)"; exit 1; fi
@@ -83,7 +96,9 @@ kiosk-uninstall: ## Remove the kiosk profile, leaving /etc/default/wm-kiosk
 	@if [ "$$(id -u)" -ne 0 ]; then echo "run as root"; exit 1; fi
 	@-systemctl disable --now wm-kiosk.service
 	@-systemctl disable --now wm-kiosk-dual.service
+	@-systemctl disable --now wm-dashboard.service
 	@rm -f /etc/systemd/system/wm-kiosk.service /etc/systemd/system/wm-kiosk-dual.service
+	@rm -f /etc/systemd/system/wm-dashboard.service /usr/local/bin/wm-dashboard.sh
 	@rm -f /usr/local/bin/wm-kiosk-launch.sh /usr/local/bin/wm-kiosk-dual.sh
 	@rm -rf /usr/local/share/wm-kiosk
 	@systemctl daemon-reload

@@ -1,0 +1,52 @@
+# The dashboard itself.
+#
+# The kiosk units launch Chromium at WM_KIOSK_URL and nothing else; without
+# this, a panel boots to a connection-refused page. That gap is easy to miss
+# because a developer always has `npm run dev` already running in a terminal,
+# and a kiosk never does.
+#
+# `vite dev` rather than a built bundle, deliberately. Upstream serves its 92
+# API routes through Vite dev-server plugins (vite.config.ts mounts the same
+# handler pipeline the hosted deployment runs), so a static build of the client
+# would render the frame and then fail every fetch behind it. The dashboard and
+# its API are one process on one port.
+#
+# Install:
+#   sudo make -C deploy dashboard
+#
+# Configure via /etc/default/wm-kiosk: WM_APP_DIR, WM_APP_USER, DEV_PORT.
+
+[Unit]
+Description=LCARS World Monitor dashboard server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/wm-kiosk
+
+# `wm` rather than a variable: systemd expands EnvironmentFile values in
+# ExecStart= and nowhere else, so `User=${WM_APP_USER}` would be taken
+# literally and the unit would fail to start. The installer creates the user;
+# chown the checkout to it. WM_APP_DIR is read by the launcher, where a
+# variable does work.
+User=wm
+Group=wm
+
+ExecStart=/usr/local/bin/wm-dashboard.sh
+
+# Feeds are fetched on a schedule and some upstreams rate-limit or time out;
+# a crash must not take the panel down until someone notices.
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=0
+
+# Vite holds the module graph in memory and this box has 32GB; the cap is a
+# backstop against a leak rather than a budget.
+MemoryMax=8G
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

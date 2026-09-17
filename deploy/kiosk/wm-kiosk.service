@@ -17,7 +17,8 @@
 Description=LCARS World Monitor kiosk
 # The dashboard is LAN-only, but it still needs the network stack up before
 # Chromium tries to reach the local origin.
-After=network-online.target systemd-user-sessions.service
+After=network-online.target systemd-user-sessions.service wm-dashboard.service
+Wants=wm-dashboard.service
 Wants=network-online.target
 
 [Service]

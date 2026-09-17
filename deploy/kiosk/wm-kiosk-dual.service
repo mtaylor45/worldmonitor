@@ -14,7 +14,8 @@
 
 [Unit]
 Description=LCARS World Monitor kiosk (two displays)
-After=network-online.target systemd-user-sessions.service
+After=network-online.target systemd-user-sessions.service wm-dashboard.service
+Wants=wm-dashboard.service
 Wants=network-online.target
 Conflicts=wm-kiosk.service
 
