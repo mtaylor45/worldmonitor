@@ -1,23 +1,23 @@
 # LCARS World Monitor
 
 A self-hosted, always-on situational-awareness dashboard with an LCARS interface,
-built for a dedicated 1280×720 kiosk display and — eventually — controlled by a
-local voice assistant.
+built for a two-panel kiosk — a 2U display for the data, a 1U console for
+navigation — and controlled by a local voice assistant.
 
 It is a personal fork of **[koala73/worldmonitor](https://github.com/koala73/worldmonitor)**,
 extending the upstream dashboard with a theme architecture, the LCARS visual
-system, kiosk deployment, and a roadmap toward fully local voice interaction.
+system, a two-display kiosk deployment, and fully local voice interaction.
 
 The whole project follows from one idea:
 
 > A situational-awareness display should be something you **glance at** — and
-> eventually something you can **talk to** — rather than another application you
-> have to sit down and operate.
+> something you can **talk to** — rather than another application you have to sit
+> down and operate.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Fork of](https://img.shields.io/badge/fork_of-koala73%2Fworldmonitor-informational)](https://github.com/koala73/worldmonitor)
 [![Upstream code surface](https://img.shields.io/badge/upstream_files_touched-2-success)](docs/UPSTREAM-DIFF.md)
-[![Target](https://img.shields.io/badge/target-1280%C3%97720_kiosk-9999ff)](#kiosk-hardware)
+[![Target](https://img.shields.io/badge/target-2U_%2B_1U_kiosk-9999ff)](#kiosk-hardware)
 
 > **This is a personal fork.** For the upstream project — its hosted variants,
 > npm/PyPI packages, MCP server, API and commercial licensing — go to
@@ -41,8 +41,10 @@ The whole project follows from one idea:
 | Design-system conformance | 🟢 Asserted in CI |
 | Two-display layout (2U + 1U) | 🟢 Built, verified at both resolutions |
 | Dashboard pagination | 🟢 Built, derived from upstream's categories |
+| Upstream chrome suppression | 🟢 201px of a 400px display reclaimed, at the theme layer |
 | Multi-touch interaction | 🟡 Built / needs a real touchscreen |
 | Kiosk deployment configuration | 🟡 Written / hardware verification pending |
+| Install runbook | 🟡 Written / never executed — [`deploy/INSTALL.md`](deploy/INSTALL.md) |
 | Palette choice | 🟡 Awaiting the physical panel |
 | Local voice assistant | 🟡 Built / hardware verification pending |
 | Voice commands | 🟡 Built / hardware verification pending |
@@ -51,8 +53,9 @@ The whole project follows from one idea:
 | Home-lab telemetry | ⚪ Planned |
 
 **P0 — Foundation** and **P1 — LCARS Theme** are complete and verified. **P2**,
-**P3** and **P4-1** are built and tested; what remains for each is a
-measurement, not a feature — see *[What is left](#what-is-left)*. See
+**P3**, **P4-1** and the **two-panel split** are built and tested; what remains
+for each is a measurement, a training run or a panel — not a feature. See
+*[What is left](#what-is-left)*. See
 **[SCOPE.md](SCOPE.md)** for the authoritative roadmap and acceptance
 criteria.
 
@@ -88,12 +91,22 @@ collection of familiar colours:
 - Distinct semantic alert states
 - Instrument-panel rather than application-window composition
 
-### 🖥️ Dedicated kiosk
+### 🖥️ Dedicated two-panel kiosk
 
-The deployment target is a fixed 1280×720 display running Chromium under `cage`
-on Wayland, on Ubuntu Server — automatic startup, no browser chrome, no
-scrollbars, pixel-specific layout. Initial hardware is an Intel NUC6i7KYK
-"Skull Canyon".
+The deployment target is **two displays driven by one machine**: a 2U 1280×400
+panel carrying the data, and a 1U 1424×280 console carrying navigation, actions
+and voice. Both are multi-touch. Chromium runs under `sway` on Wayland on Ubuntu
+Server — automatic startup, no browser chrome, no scrollbars, pixel-specific
+layout per surface.
+
+Splitting them is what makes the data panel readable. A 400px-tall display has
+no room for both a control column and the map, so **the 2U panel is for viewing
+and the 1U console is for control** — the rail, the layer toggles and the time
+slider all move off the display they were obscuring. The original 1280×720
+single-panel layout survives as `panel`, which is the fallback and the target
+you develop against.
+
+Initial hardware is an Intel NUC6i7KYK "Skull Canyon".
 
 ### 🎙️ Local voice assistant
 
@@ -239,23 +252,24 @@ Four layers, added as new directories so upstream merges stay cheap.
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  Chromium Kiosk                     │
+│               Chromium — one profile                │
 │                                                     │
-│   ┌─────────────────┐     ┌─────────────────────┐   │
-│   │  Theme Engine   │     │  World Monitor      │   │
-│   │                 │────▶│  Dashboard          │   │
-│   │  Tokens         │     │  Globe / Feeds      │   │
-│   │  Chrome         │     │  Panels / Data      │   │
-│   └─────────────────┘     └─────────────────────┘   │
-│             ▲                     │                 │
-│             │                     ▼                 │
-│             │              Context Snapshot         │
-│             │                     │                 │
-└─────────────┼─────────────────────┼─────────────────┘
-              │                     │
-              │ WebSocket           │ HTTP
-              │                     │
-┌─────────────┴─────────────────────┴─────────────────┐
+│   ┌──────────────────┐        ┌─────────────────┐   │
+│   │  2U dashboard    │        │  1U nav console │   │
+│   │  1280×400        │◀──────▶│  1424×280       │   │
+│   │                  │ Broad- │                 │   │
+│   │  Theme + chrome  │  cast  │  Pages, actions │   │
+│   │  Globe / panels  │Channel │  Voice, status  │   │
+│   └──────────────────┘        └─────────────────┘   │
+│        ▲         │                                  │
+│        │         ▼                                  │
+│        │   Context Snapshot                         │
+│        │         │                                  │
+└────────┼─────────┼──────────────────────────────────┘
+         │         │
+         │WebSocket│ HTTP
+         │         │
+┌────────┴─────────┴──────────────────────────────────┐
 │                Local Voice Sidecar                  │
 │                                                     │
 │    Wake Word → STT → Local LLM → Actions → TTS      │
@@ -263,13 +277,20 @@ Four layers, added as new directories so upstream merges stay cheap.
 └─────────────────────────────────────────────────────┘
 ```
 
-Two architectural decisions carry most of the design.
+Three architectural decisions carry most of the design.
 
 **The browser does not own the audio pipeline.** Microphone capture, wake-word
 detection, speech recognition and text-to-speech belong in the voice sidecar.
 This avoids making Chromium responsible for the hardware and audio lifecycle, and
 lets the voice system operate independently of browser permissions. The frontend
 receives voice-state events over WebSocket.
+
+**The two displays talk to each other, not through the sidecar.** The sidecar
+already fans out to every client and would have worked, but routing page
+selection through it would mean the console goes dead whenever the voice backend
+is down. `BroadcastChannel` needs no server: same origin, same Chromium profile.
+`localStorage` carries the fallback and doubles as the last-known page, so a
+panel powering on second joins the page its sibling is already showing.
 
 **The LLM does not read the DOM.** It consumes a structured context snapshot —
 current theme, visible panels, panel state, selected region, alert state,
@@ -317,6 +338,18 @@ reachable by voice" structural rather than aspirational, and it prevents the
 voice system and the graphical UI from developing separate command
 implementations.
 
+Because the console is a control surface for a *different window*, each action
+also declares where it belongs — `local`, `dashboard` or `both` — and
+`installActions` does the forwarding once. A different window is a different
+DOM, so an action run on the console would otherwise act on its own parked copy
+of the dashboard and do nothing anyone could see. `theme.*` is `both`: the theme
+is per-window state, and a console that cycled only its own would leave the two
+panels wearing different skins.
+
+The forwarding runs in one direction. The dashboard performs what arrives
+through the same registry a button press uses and has no remote port of its own,
+so the two cannot volley.
+
 ---
 
 ## Quick start
@@ -338,6 +371,23 @@ Then try the theme:
 http://localhost:3000/?wm-theme=lcars
 http://localhost:3000/?wm-theme=lcars-bright
 ```
+
+Each kiosk surface can be opened on its own, which is how you develop against
+them without the hardware:
+
+```
+?wm-theme=lcars&wm-surface=dashboard    2U data panel,  1280×400
+?wm-theme=lcars&wm-surface=nav          1U console,     1424×280
+?wm-theme=lcars&wm-surface=panel        single-display fallback, 1280×720
+```
+
+Open the first two in separate windows of the *same* browser profile and they
+will find each other over `BroadcastChannel` — press a page button on the
+console and the dashboard changes page. Surface identity comes from the URL
+rather than storage, for the same reason the theme does: a kiosk display has no
+keyboard, so identity must not depend on something that could wedge. Viewport
+height is the fallback, so dragging a window between panels during development
+does the right thing.
 
 Upstream's own variants (`npm run dev:tech`, `dev:finance`, `dev:commodity`,
 `dev:happy`, `dev:energy`) are unaffected — the theme layer is deliberately
@@ -385,10 +435,11 @@ worldmonitor/
 │   └── sounds/              LCARS UI sounds + licence
 │
 ├── deploy/
-│   ├── Makefile             bring-up: models, up, doctor, kiosk, kiosk-dual
+│   ├── INSTALL.md           hardware bring-up runbook, first light onward
+│   ├── Makefile             bring-up: dashboard, models, up, doctor, kiosk*
 │   ├── models.conf          weights + verified sha256
 │   ├── fetch-models.sh      fetch and verify, idempotent
-│   └── kiosk/               cage + Chromium + systemd unit
+│   └── kiosk/               dashboard unit, sway (two panels), cage (one)
 │
 ├── preview/
 │   ├── lcars-style-guide.html   the design system, rendered
@@ -417,6 +468,7 @@ worldmonitor/
 │   ├── DESIGN-SYSTEM.md
 │   ├── LCARS-ASSETS.md
 │   ├── P0-PORT.md
+│   ├── SPRINT-PLAN.md
 │   ├── UPSTREAM-DIFF.md
 │   ├── VOICE-CHARACTER.md
 │   └── WORKING-BRIEF.md
@@ -439,40 +491,126 @@ Two displays, one machine:
 | `panel` | 1280×720 | Single-display fallback, and the development target |
 
 ```bash
+sudo make -C deploy dashboard      # the dashboard server itself
 make -C deploy models && make -C deploy up && make -C deploy doctor
 sudo make -C deploy kiosk-dual     # two displays (sway)
 sudo make -C deploy kiosk          # one display  (cage)
 ```
 
-`cage` runs one fullscreen client by design, which is right for a single panel
-and useless for two, so the dual profile uses **sway** — still no desktop,
-still nothing that can steal focus, but able to assign a window to an output.
-Output names are machine-specific (`swaymsg -t get_outputs`) and the unit
-**refuses to start until they are set** rather than coming up with the panels
-swapped.
+**[`deploy/INSTALL.md`](deploy/INSTALL.md) is the runbook** — what to check
+before mounting anything, how to find the output and touch identifiers, and the
+four acceptance criteria that exist only on hardware. Enable one kiosk unit, not
+both: they want the same screens and the dual unit declares `Conflicts=` for
+that reason.
 
-The two windows share one Chromium profile, and that is load-bearing: same
-profile means same process group, which is what lets `BroadcastChannel` carry
-page selection between them without a server in the middle.
+`wm-dashboard.service` runs the app itself, as an unprivileged no-login `wm`
+user. It
+runs the Vite dev server rather than serving a static build, deliberately:
+upstream serves its 92 API routes through dev-server plugins, so a built client
+would paint the frame and then fail every fetch behind it.
+
+`cage` runs exactly one fullscreen client by design, which is right for a
+single panel and useless for two, so the dual profile uses **sway** — still no
+desktop, still nothing that can steal focus, but able to assign each window to
+an output by `--class`. Output names are machine-specific
+(`swaymsg -t get_outputs`) and the unit **refuses to start until they are set**
+rather than coming up with the panels swapped.
+
+The two windows share one Chromium profile, and that is load-bearing.
+`BroadcastChannel` reaches every same-origin context in the same browser
+instance and no further, so one profile is what lets page selection cross
+between the panels with no server in the middle. Two profiles, or two
+origins, and the console goes quiet without erroring — which is exactly how
+that failure presents.
 
 `doctor` is the one to run before trusting a panel: every dependency the
 sidecar has fails silently, so it checks each and names a remedy rather than a
 verdict.
 
+### Pages
 
-`deploy/kiosk/` holds a `cage` + Chromium profile for Ubuntu Server: a systemd
-unit, a launch script, and an env template. Install steps and operational notes
-are in **[`deploy/kiosk/README.md`](deploy/kiosk/README.md)**.
+Upstream can render **189 panels across 23 categories**. A 1280×400 display
+holds four or five. Pagination is not a convenience here — it is the only way
+the dashboard fits the hardware at all, and `docs/DESIGN-SYSTEM.md` specified it
+in the "Page archetypes" table before it existed.
 
-Server rather than Desktop, then `cage`: a desktop session with the panel hidden
-has more surface area, more update churn, and more things that can steal focus at
-3am on a display nobody is sitting in front of.
+| Page | Tone | Draws from |
+|---|---|---|
+| `OPS` | tan | Core situational panels |
+| `SCAN` | lilac | Intelligence, correlation |
+| `COMMS` | periwinkle | Regional, topical and positive news |
+| `ENGINEERING` | ice | Markets, commodities, crypto, central banks |
+| `LIBRARY` | cream | Data tracking, tech, startups, security policy |
 
-The theme is pinned in the launch URL rather than left to `localStorage`, so a
-panel with no keyboard cannot be wedged by a bad stored value.
+Each page carries one tone from the structural ramp, so **a page is
+identifiable from the doorway before any label resolves**. SCAN diverges from
+the design system deliberately: its archetype table gives LONG RANGE SCAN a
+peach/salmon frame, but salmon is status-only in this fork — a page permanently
+wearing the alert colour would make an actual alert mean nothing.
 
-**Not yet verified on hardware.** Expect `--ozone-platform` and the `WLR_*`
-environment to need adjustment against a real display and input device.
+Three rules make this safe to leave running unattended:
+
+- **Pages are derived from `PANEL_CATEGORY_MAP`, never duplicated.** Importing
+  upstream's map read-only means a panel upstream adds lands on a page with no
+  edit here, and a rename breaks the build rather than the display. Duplicating
+  the list would fail the other way — silently, months later, with a panel
+  nobody can reach.
+- **Panels are hidden by a class, never removed.** Upstream owns that markup.
+  Hiding keeps a chart's state across a page switch instead of re-fetching, and
+  a resize is dispatched afterwards because a chart rendered at zero width does
+  not recover on its own.
+- **Only pages with rendered panels are offered.** Most of the 189 panels are
+  disabled on any given install. An unavailable page is *dimmed* rather than
+  removed, because a console whose buttons move defeats the muscle memory a wall
+  panel runs on.
+
+`panel.focus` switches page first. A panel on another page is not reachable by
+scrolling, so without that the command would scroll to a hidden element and
+appear to do nothing.
+
+### What the console reports back
+
+A control that cannot say what it controls is half a control, and on a wall
+panel the missing half is the one you read from across a room. The display that
+owns the map reports which layers are lit — on request, after performing a
+forwarded toggle, and when the map changes them itself. The console asks on
+boot, since the two panels start independently and either can come up second.
+
+The live block keeps its colour and **the row dims around it**. Recolouring the
+selected button was the obvious approach and was wrong twice over: every colour
+bright enough to read as "lit" is already one of the five structural tones, so
+OPS-when-selected rendered identical to ENGINEERING at rest — and overwriting
+the tone destroys the archetype information that makes a page identifiable at
+distance. Dimming costs no token, survives a palette swap, and says the same
+thing for pages and layers.
+
+Upstream chrome the kiosk does not want — the Pro banner, the dashboard tab bar,
+the site header and footer, the map's own layer toggles and time slider — is
+suppressed **in the theme, never in upstream**. A CSS rule in our own stylesheet
+costs nothing at merge time; deleting the components upstream would be a
+conflict on every release forever. Together that is 201px of a 400px display
+reclaimed: the map measured **106px** before and **306px** after. `default` is
+deliberately unaffected — it is the identity theme and the safety net, so
+switching to it restores upstream exactly, including the parts of upstream we
+would rather not look at.
+
+Ubuntu **Server** rather than Desktop under either compositor: a desktop
+session with the panel hidden has more surface area, more update churn, and more
+things that can steal focus at 3am on a display nobody is sitting in front of.
+
+The theme and the surface are both pinned in the launch URL rather than left to
+`localStorage`, so a panel with no keyboard cannot be wedged by a bad stored
+value.
+
+**A touchscreen left unmapped sends whole-layout coordinates**, so a touch on
+the lower panel lands on the upper one. `map_to_output` per device is what makes
+touch work at all on a multi-output kiosk, and it is the most common thing to
+get wrong. Device identifiers come from `swaymsg -t get_inputs`.
+
+Operational notes are in **[`deploy/kiosk/README.md`](deploy/kiosk/README.md)**.
+
+**Not yet verified on hardware.** Expect `--ozone-platform`, the `WLR_*`
+environment and the output modes to need adjustment against real panels.
 
 ### Kiosk hardware
 
@@ -482,14 +620,15 @@ environment to need adjustment against a real display and input device.
 | CPU | Intel Core i7-6770HQ — 4 cores, 8 threads |
 | GPU | Intel Iris Pro 580 |
 | Memory | 32 GB |
-| Display | 1280×720, 9-inch, ~163 PPI |
+| Data panel | 2U rack-mount LCD, 1280×400, multi-touch |
+| Console panel | 1U rack-mount LCD, 1424×280, multi-touch |
 | OS | Ubuntu Server 26.04 LTS |
-| Compositor | `cage` / Wayland |
-| Browser | Chromium |
+| Compositor | `sway` / Wayland — `cage` for the single-panel profile |
+| Browser | Chromium, one profile, one window per output |
 
-The fixed display resolution is intentional. This is not meant to become another
+The fixed resolutions are intentional. This is not meant to become another
 responsive web application — the primary interface is a dedicated physical
-instrument.
+instrument, and each surface is laid out for the panel it runs on.
 
 ---
 
@@ -517,7 +656,7 @@ Current code surface: **2 files, 3 insertions, 1 deletion.**
 
 | File | Change |
 |---|---|
-| `src/main.ts` | `import { bootThemes }` and one call before `new App('app')` |
+| `src/main.ts` | `import { bootApp }` and one call before `new App('app')` |
 | `index.html` | `data-wm-shell` on `<div id="app">` |
 
 Plus this README, which is rewritten for the fork and deliberately not kept
@@ -567,12 +706,16 @@ npx vitest run --config vitest.dom.config.mts tests/dom/theme-token-contract.tes
 # and that the alert state really repaints the frame
 npx playwright test e2e/theme-engine-p0.spec.ts
 
+# Both kiosk surfaces at their real resolutions, and the bus between them
+npx playwright test e2e/two-display.spec.ts
+
 # Voice sidecar - standard library only, no pytest to install
 cd voice-sidecar && python3 -m unittest discover -s tests -t .
 ```
 
-Current counts: **230** sidecar tests, **834** DOM tests across 96 files, **48**
-end-to-end tests.
+Current counts: **230** sidecar tests, **834** DOM tests across 96 files, and
+**69** fork-owned end-to-end tests — 36 acceptance, 33 across the two
+displays. Upstream's own e2e suites run unchanged alongside them.
 
 Run all three after every upstream merge. The token test catches upstream
 retuning a value our extraction records; the e2e catches upstream changing the
@@ -748,6 +891,20 @@ line). A malformed entry is logged and skipped: turning a typo in an environment
 variable into a panel that will not start is strictly worse than running the
 rules that parsed.
 
+### Two-panel kiosk · built, pending hardware
+
+Tracked as sprints rather than a phase number — see
+[`docs/SPRINT-PLAN.md`](docs/SPRINT-PLAN.md).
+
+The layout split across a 2U data panel and a 1U navigation console: surface
+identity from the launch URL, `BroadcastChannel` between the windows, action
+forwarding by `target`, pages derived from upstream's category map, the console
+reporting map-layer state back, and the sway kiosk profile with per-device touch
+mapping. Upstream chrome the kiosk does not want is suppressed at the theme
+layer, which took the map from 106px to 306px of a 400px display.
+
+Verified at both resolutions in Playwright. What it has not met is a panel.
+
 ### P4 — Remaining candidates
 
 Scheduled spoken briefings · presence-aware attract mode · conversational
@@ -769,7 +926,7 @@ Every phase is built. What remains is measurement, a training run, and a panel:
 | A trained "Computer" model | A training run, not code |
 | Alert thresholds | A week of real readings. `*>85` is a guess, as are the margin, the poll interval and the spoken-alert floor |
 | The palette choice | A legibility test at 2.5 m. `preview/lcars-preview.html` exists to settle it |
-| The kiosk profile | Hardware. The panel is unsourced |
+| The kiosk profile | Bring-up on the real panels: output modes, per-device touch mapping, and whether each panel reports its native timing at all. [`deploy/INSTALL.md`](deploy/INSTALL.md) is the runbook, and has never been executed |
 | The cap-height factor (1.36) | Recorded as a token, not yet applied — it is calibrated for Swiss 911, and Antonio has different vertical metrics |
 
 None of these is a missing feature. Each is a number that can only be taken off
@@ -802,8 +959,10 @@ discussion are welcome.
   unless the change is required.
 - **Document integration seams.** If an upstream file must change, record it in
   `docs/UPSTREAM-DIFF.md`.
-- **Test at the actual target resolution.** A feature that looks correct on a
-  2560×1440 monitor but fails at **1280×720** is not complete.
+- **Test at the actual target resolutions.** A feature that looks correct on a
+  2560×1440 monitor but fails at **1280×400**, **1424×280** or **1280×720** is
+  not complete. All three are asserted in `e2e/`, and the two kiosk surfaces are
+  reachable with `?wm-surface=dashboard` and `?wm-surface=nav`.
 
 Upstream's own contributor docs — `AGENTS.md`, `CONTRIBUTING.md`,
 `ARCHITECTURE.md`, `CONCEPTS.md`, `SELF_HOSTING.md` — still apply and are not
@@ -824,7 +983,9 @@ superseded by anything here.
 | [`docs/VOICE-CHARACTER.md`](docs/VOICE-CHARACTER.md) | Phrasing, prosody, signal chain, engine comparison, and how to train the "Computer" wake model |
 | [`docs/P0-PORT.md`](docs/P0-PORT.md) | Default-theme extraction and acceptance criteria |
 | [`docs/UPSTREAM-DIFF.md`](docs/UPSTREAM-DIFF.md) | Every upstream file touched, and why |
-| [`deploy/kiosk/README.md`](deploy/kiosk/README.md) | Kiosk install and operational notes |
+| [`docs/SPRINT-PLAN.md`](docs/SPRINT-PLAN.md) | Current priorities and the sprint they belong to |
+| [`deploy/INSTALL.md`](deploy/INSTALL.md) | Hardware bring-up runbook: base OS, the two panels, touch mapping, and the acceptance tests that need hardware |
+| [`deploy/kiosk/README.md`](deploy/kiosk/README.md) | Kiosk operational notes |
 | [`voice-sidecar/README.md`](voice-sidecar/README.md) | Voice sidecar: run, configure, and what only hardware can verify |
 | [`docs/wiki/`](docs/wiki/) | Source of the [project wiki](https://github.com/mtaylor45/worldmonitor/wiki) — configuration reference, merge routine, wake-word training, alert tuning, troubleshooting |
 
@@ -889,6 +1050,6 @@ It is:
 
 > **Look at the computer.**
 
-And eventually:
+And:
 
 > **"Computer, status."**
